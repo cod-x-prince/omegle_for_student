@@ -10,7 +10,7 @@ const constants = require("./config/constants");
 
 // Import modules
 const authMiddleware = require("./modules/auth/authMiddleware");
-const pairingManager = require("./modules/pairing/pairingManager");
+const PairingManager = require("./modules/pairing/pairingManager");
 const signalingHandler = require("./modules/signaling/signalingHandler");
 const logger = require("./utils/logger");
 
@@ -22,6 +22,7 @@ class CampusConnectServer {
       cors: securityConfig.corsConfig,
     });
 
+    this.pairingManager = new PairingManager(this.io);
     this.setupMiddleware();
     this.setupRoutes();
     this.setupSocketIO();

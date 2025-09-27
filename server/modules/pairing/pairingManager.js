@@ -1,7 +1,8 @@
 const logger = require("../../utils/logger");
 
 class PairingManager {
-  constructor() {
+  constructor(io) {
+    this.io = io;
     this.waitingQueue = [];
     this.activePairs = new Map();
     this.pairingTimeouts = new Map();
@@ -177,7 +178,7 @@ class PairingManager {
     this.removeFromQueue(socketId);
     this.pairingTimeouts.delete(socketId);
 
-    const io = require("../server").io;
+    this.io.to(socketId).emit("pairing-timeout");
     io.to(socketId).emit("pairing-timeout");
 
     logger.info("User notified of pairing timeout", { socketId });
@@ -196,4 +197,4 @@ class PairingManager {
   }
 }
 
-module.exports = new PairingManager();
+module.exports = PairingManager;
