@@ -144,7 +144,7 @@ class CampusConnectServer {
       });
 
       // Add to pairing queue
-      const addedToQueue = pairingManager.addToQueue(socket, socket.userData);
+      const addedToQueue =this.pairingManager.addToQueue(socket, socket.userData);
 
       if (!addedToQueue) {
         logger.warn("User could not be added to queue", {
