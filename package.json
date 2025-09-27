@@ -4,7 +4,7 @@
   "description": "Secure video chat platform for college students",
   "main": "server/server.js",
   "scripts": {
-    "start": "node server/server.js",
+    "start": "node --max-old-space-size=512 server/server.js",
     "dev": "nodemon server/server.js",
     "test": "jest",
     "start:open": "node server/server.js && start http://localhost:3000",
