@@ -81,12 +81,12 @@ class PairingManager {
       // Notify both users
       const io = require("../server").io;
 
-      io.to(user1.socketId).emit("paired", {
+      this.io.to(user1.socketId).emit("paired", {
         peerId: user2.socketId,
         initiator: true,
       });
 
-      io.to(user2.socketId).emit("paired", {
+      this.io.to(user2.socketId).emit("paired", {
         peerId: user1.socketId,
         initiator: false,
       });
@@ -110,8 +110,7 @@ class PairingManager {
     const peerId = this.activePairs.get(socketId);
     if (peerId) {
       // Notify peer about disconnection
-      const io = require("../server").io;
-      io.to(peerId).emit("peer-disconnected");
+      this.io.to(peerId).emit("peer-disconnected");
 
       // Clean up pair
       this.activePairs.delete(socketId);
@@ -179,7 +178,6 @@ class PairingManager {
     this.pairingTimeouts.delete(socketId);
 
     this.io.to(socketId).emit("pairing-timeout");
-    io.to(socketId).emit("pairing-timeout");
 
     logger.info("User notified of pairing timeout", { socketId });
   }
