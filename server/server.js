@@ -33,6 +33,10 @@ class CampusConnectServer {
   setupMiddleware() {
     logger.debug("Setting up middleware");
 
+    // CHANGE 1: Trust the proxy
+    // This is crucial for rate limiting and getting the correct IP address on Render
+    this.app.set("trust proxy", 1); // <-- ADD THIS LINE
+
     // Security middleware
     this.app.use(securityConfig.helmetConfig);
     this.app.use(securityConfig.rateLimitConfig);
@@ -175,7 +179,7 @@ class CampusConnectServer {
           email: socket.userData.email,
         });
 
-        pairingManager.handleDisconnect(socket.id);
+        this.pairingManager.handleDisconnect(socket.id);
         signalingHandler.cleanup(socket.id);
       });
 
