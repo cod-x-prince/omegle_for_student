@@ -85,7 +85,7 @@ class CampusConnectServer {
           memory: process.memoryUsage(),
           uptime: process.uptime(),
         },
-        pairing: pairingManager.getQueueStatus(),
+        pairing: this.pairingManager.getQueueStatus(),
       };
       res.json(info);
     });
