@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="CampusConnect - Secure video chat for college students"
+    />
+
+    <!-- Security Headers -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; 
+                   script-src 'self' 'unsafe-inline' https://cdn.socket.io; 
+                   style-src 'self' 'unsafe-inline'; 
+                   connect-src 'self' ws: wss: blob:;
+                   media-src 'self' blob:;
+                   font-src 'self';
+                   img-src 'self' data: https:;"
+    />
+
+    <title>CampusConnect - Welcome</title>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Welcome to CampusConnect</h1>
+        <p>The exclusive video chat for college students.</p>
+      </header>
+
+      <main>
+        <form id="email-form" class="auth-form">
+          <div class="form-group">
+            <label for="email"
+              >Enter your .edu or college email to begin:</label
+            >
+            <input
+              type="email"
+              id="email"
+              name="email"
+              placeholder="you@yourschool.edu or you@cmrit.ac.in"
+              required
+              autocomplete="email"
+            />
+          </div>
+          <button type="submit" class="btn-primary">Find a Partner</button>
+        </form>
+
+        <div id="loading-indicator" class="loading" style="display: none">
+          <div class="spinner"></div>
+          <p>Verifying your email and searching for a partner...</p>
+        </div>
+      </main>
+
+      <footer>
+        <p class="footer-text">Secure • Private • College Verified</p>
+      </footer>
+    </div>
+
+    <!-- Socket.IO Client -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <!-- Application Scripts (Modular) -->
+    <script src="js/utils/security.js"></script>
+    <script src="js/auth/authManager.js"></script>
+    <script src="js/video/videoManager.js"></script>
+    <script src="js/main.js"></script>
+  </body>
+</html>
