@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="CampusConnect - Secure video chat for college students"
+    />
+    <title>CampusConnect - Sign Up</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="auth-page">
+    <!-- Animated Background -->
+    <div class="animated-bg">
+      <div class="bg-particle"></div>
+      <div class="bg-particle"></div>
+      <div class="bg-particle"></div>
+      <div class="bg-particle"></div>
+      <div class="bg-particle"></div>
+    </div>
+
+    <div class="container">
+      <!-- Floating Navigation -->
+      <nav class="floating-nav">
+        <div class="nav-brand">
+          <span class="logo-icon">🎓</span>
+          <span class="logo-text">CampusConnect</span>
+        </div>
+        <div class="nav-links">
+          <a href="/" class="nav-link">Home</a>
+          <a href="/login.html" class="nav-link">Login</a>
+        </div>
+      </nav>
+
+      <main class="auth-main">
+        <div class="auth-container">
+          <div class="auth-card">
+            <div class="auth-header">
+              <h1>Join CampusConnect</h1>
+              <p>
+                Create your account and start connecting with fellow students
+              </p>
+            </div>
+
+            <form id="signupForm" class="auth-form">
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="firstName">First Name</label>
+                  <div class="input-container">
+                    <input
+                      type="text"
+                      id="firstName"
+                      name="firstName"
+                      required
+                    />
+                    <span class="input-icon">👤</span>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="lastName">Last Name</label>
+                  <div class="input-container">
+                    <input type="text" id="lastName" name="lastName" required />
+                    <span class="input-icon">👤</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="email">College Email</label>
+                <div class="input-container">
+                  <input type="email" id="email" name="email" required />
+                  <span class="input-icon">✉️</span>
+                </div>
+                <div class="input-hint">Must be a valid .edu email address</div>
+              </div>
+
+              <div class="form-group">
+                <label for="college">College/University</label>
+                <div class="input-container">
+                  <select id="college" name="college" required>
+                    <option value="">Select your institution</option>
+                    <option value="cmr">CMR Institute of Technology</option>
+                    <option value="mit">MIT</option>
+                    <option value="bmsit">BMSIT</option>
+                    <option value="other">Other</option>
+                  </select>
+                  <span class="input-icon">🏫</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="major">Major/Field of Study</label>
+                <div class="input-container">
+                  <input type="text" id="major" name="major" required />
+                  <span class="input-icon">📚</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="password">Password</label>
+                <div class="input-container">
+                  <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    required
+                  />
+                  <span class="input-icon">🔒</span>
+                  <button
+                    type="button"
+                    class="password-toggle"
+                    id="passwordToggle"
+                  >
+                    👁️
+                  </button>
+                </div>
+                <div class="password-strength">
+                  <div class="strength-bar"></div>
+                  <div class="strength-text">Password strength</div>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="confirmPassword">Confirm Password</label>
+                <div class="input-container">
+                  <input
+                    type="password"
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    required
+                  />
+                  <span class="input-icon">🔒</span>
+                </div>
+              </div>
+
+              <div class="form-options">
+                <label class="checkbox-container">
+                  <input type="checkbox" id="terms" required />
+                  <span class="checkmark"></span>
+                  I agree to the <a href="#">Terms of Service</a> and
+                  <a href="#">Privacy Policy</a>
+                </label>
+                <label class="checkbox-container">
+                  <input type="checkbox" id="newsletter" />
+                  <span class="checkmark"></span>
+                  Send me updates about new features and opportunities
+                </label>
+              </div>
+
+              <button type="submit" class="auth-submit-btn">
+                <span class="btn-text">Create Account</span>
+                <span class="btn-loader"></span>
+              </button>
+
+              <div class="auth-divider">
+                <span>or sign up with</span>
+              </div>
+
+              <div class="social-auth">
+                <button type="button" class="social-btn google-btn">
+                  <span class="social-icon">🔍</span>
+                  Google
+                </button>
+                <button type="button" class="social-btn microsoft-btn">
+                  <span class="social-icon">🔷</span>
+                  Microsoft
+                </button>
+              </div>
+
+              <div class="auth-footer">
+                <p>
+                  Already have an account? <a href="/login.html">Sign in</a>
+                </p>
+              </div>
+            </form>
+          </div>
+
+          <div class="auth-visual">
+            <div class="visual-content">
+              <div class="visual-icon">🚀</div>
+              <h2>Start Your Academic Journey</h2>
+              <p>
+                Join a community of motivated students and expand your learning
+                network
+              </p>
+              <div class="benefits-list">
+                <div class="benefit-item">
+                  <span class="benefit-icon">🎯</span>
+                  <span>Connect with students in your field</span>
+                </div>
+                <div class="benefit-item">
+                  <span class="benefit-icon">🔒</span>
+                  <span>Secure, verified student community</span>
+                </div>
+                <div class="benefit-item">
+                  <span class="benefit-icon">⚡</span>
+                  <span>Instant matching based on interests</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+    <script src="/js/auth/authManager.js"></script>
+  </body>
+</html>

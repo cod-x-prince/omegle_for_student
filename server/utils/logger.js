@@ -1,28 +1,36 @@
 const winston = require("winston");
 const path = require("path");
+const fs = require("fs");
 
 // Ensure logs directory exists
-const fs = require("fs");
-const logsDir = path.join(__dirname, "../../logs");
+const logsDir = path.join(__dirname, "../logs");
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 
-// Custom log format with colors
+// Custom log format with more details
 const logFormat = winston.format.combine(
   winston.format.timestamp({
-    format: "YYYY-MM-DD HH:mm:ss",
+    format: "YYYY-MM-DD HH:mm:ss.SSS",
   }),
   winston.format.errors({ stack: true }),
-  winston.format.printf(({ level, message, timestamp, stack, ...meta }) => {
-    let log = `${timestamp} [${level.toUpperCase()}]: ${message}`;
+  winston.format.json()
+);
 
-    // Add stack trace for errors
+// Simple format for console
+const consoleFormat = winston.format.combine(
+  winston.format.timestamp({
+    format: "HH:mm:ss.SSS",
+  }),
+  winston.format.errors({ stack: true }),
+  winston.format.colorize(),
+  winston.format.printf(({ level, message, timestamp, stack, ...meta }) => {
+    let log = `${timestamp} [${level}]: ${message}`;
+
     if (stack) {
       log += `\n${stack}`;
     }
 
-    // Add metadata if present
     if (Object.keys(meta).length > 0) {
       log += `\n${JSON.stringify(meta, null, 2)}`;
     }
@@ -37,91 +45,145 @@ const logger = winston.createLogger({
   format: logFormat,
   defaultMeta: {
     service: "campusconnect-server",
-    pid: process.pid,
+    environment: process.env.NODE_ENV || "development",
   },
   transports: [
-    // Error logs (always logged)
+    // Error logs
     new winston.transports.File({
-      filename: path.join(logsDir, "error.log"),
+      filename: "logs/error.log",
       level: "error",
       handleExceptions: true,
       maxsize: 5242880, // 5MB
       maxFiles: 5,
     }),
 
-    // Combined logs (info and above)
+    // Combined logs
     new winston.transports.File({
-      filename: path.join(logsDir, "combined.log"),
+      filename: "logs/combined.log",
       maxsize: 5242880, // 5MB
       maxFiles: 5,
     }),
 
-    // Console output with colors in development
-    new winston.transports.Console({
-      format: winston.format.combine(winston.format.colorize(), logFormat),
-      silent: process.env.NODE_ENV === "test", // Silent during tests
-    }),
+    // Debug logs (only in development)
+    ...(process.env.NODE_ENV !== "production"
+      ? [
+          new winston.transports.File({
+            filename: "logs/debug.log",
+            level: "debug",
+            maxsize: 5242880,
+            maxFiles: 3,
+          }),
+        ]
+      : []),
   ],
-
-  // Do not exit on handled exceptions
-  exitOnError: false,
 });
 
-// Add stream for Express morgan (if you want HTTP request logging)
-logger.stream = {
-  write: (message) => {
-    logger.info(message.trim());
-  },
-};
-
-// Helper methods for different log levels
-logger.debug = (message, meta) => {
-  logger.log("debug", message, meta);
-};
-
-logger.info = (message, meta) => {
-  logger.log("info", message, meta);
-};
-
-logger.warn = (message, meta) => {
-  logger.log("warn", message, meta);
-};
-
-logger.error = (message, meta) => {
-  logger.log("error", message, meta);
-};
+// Add console transport in non-production environments
+if (process.env.NODE_ENV !== "production") {
+  logger.add(
+    new winston.transports.Console({
+      format: consoleFormat,
+      level: process.env.LOG_LEVEL || "debug",
+    })
+  );
+} else {
+  // In production, only log warnings and errors to console
+  logger.add(
+    new winston.transports.Console({
+      format: consoleFormat,
+      level: "warn",
+    })
+  );
+}
 
 // Security: Don't log sensitive information
-logger.addRedaction = (path) => {
-  logger.format = winston.format.combine(
-    winston.format.redact({ paths: path }),
-    logFormat
-  );
+const sensitiveFields = [
+  "password",
+  "token",
+  "authorization",
+  "jwt",
+  "secret",
+  "key",
+];
+
+logger.format = winston.format.combine(
+  winston.format((info) => {
+    // Redact sensitive information
+    if (info.message && typeof info.message === "object") {
+      info.message = redactSensitiveInfo(info.message);
+    }
+    if (info.meta && typeof info.meta === "object") {
+      info.meta = redactSensitiveInfo(info.meta);
+    }
+    return info;
+  })(),
+  logFormat
+);
+
+function redactSensitiveInfo(obj) {
+  if (!obj || typeof obj !== "object") return obj;
+
+  const redacted = { ...obj };
+
+  for (const key in redacted) {
+    if (
+      sensitiveFields.some((field) =>
+        key.toLowerCase().includes(field.toLowerCase())
+      )
+    ) {
+      redacted[key] = "[REDACTED]";
+    } else if (typeof redacted[key] === "object") {
+      redacted[key] = redactSensitiveInfo(redacted[key]);
+    }
+  }
+
+  return redacted;
+}
+
+// Utility methods for structured logging
+logger.api = (message, meta = {}) => {
+  logger.info(message, { ...meta, type: "api" });
 };
 
-// Log unhandled exceptions and promise rejections
-process.on("uncaughtException", (error) => {
-  logger.error("UNCAUGHT EXCEPTION - Shutting down...", {
-    error: error.message,
-    stack: error.stack,
-  });
-  process.exit(1);
-});
+logger.socket = (message, meta = {}) => {
+  logger.info(message, { ...meta, type: "socket" });
+};
 
-process.on("unhandledRejection", (reason, promise) => {
-  logger.error("UNHANDLED PROMISE REJECTION - Shutting down...", {
-    reason: reason instanceof Error ? reason.message : reason,
-    promise: promise,
-  });
-  process.exit(1);
-});
+logger.database = (message, meta = {}) => {
+  logger.info(message, { ...meta, type: "database" });
+};
 
-// Log startup information
-logger.info("Logger initialized successfully", {
-  environment: process.env.NODE_ENV || "development",
-  logLevel: logger.level,
-  nodeVersion: process.version,
-  platform: process.platform,
+logger.auth = (message, meta = {}) => {
+  logger.info(message, { ...meta, type: "auth" });
+};
+
+logger.webrtc = (message, meta = {}) => {
+  logger.debug(message, { ...meta, type: "webrtc" });
+};
+
+// Method to log startup information
+logger.startup = (service, meta = {}) => {
+  logger.info(`${service} started`, {
+    ...meta,
+    type: "startup",
+    pid: process.pid,
+    nodeVersion: process.version,
+    platform: process.platform,
+  });
+};
+
+// Method to log shutdown information
+logger.shutdown = (service, meta = {}) => {
+  logger.info(`${service} shutdown`, {
+    ...meta,
+    type: "shutdown",
+    uptime: process.uptime(),
+  });
+};
+
+// Handle logger errors
+logger.on("error", (error) => {
+  console.error("Logger error:", error);
 });
 
 module.exports = logger;

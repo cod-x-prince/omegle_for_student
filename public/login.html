@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="CampusConnect - Secure video chat for college students"
+    />
+    <title>CampusConnect - Login</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="auth-page">
+    <!-- Animated Background -->
+    <div class="animated-bg">
+      <div class="bg-particle"></div>
+      <div class="bg-particle"></div>
+      <div class="bg-particle"></div>
+      <div class="bg-particle"></div>
+      <div class="bg-particle"></div>
+    </div>
+
+    <div class="container">
+      <!-- Floating Navigation -->
+      <nav class="floating-nav">
+        <div class="nav-brand">
+          <span class="logo-icon">🎓</span>
+          <span class="logo-text">CampusConnect</span>
+        </div>
+        <div class="nav-links">
+          <a href="/" class="nav-link">Home</a>
+          <a href="/signup.html" class="nav-btn">Sign Up</a>
+        </div>
+      </nav>
+
+      <main class="auth-main">
+        <div class="auth-container">
+          <div class="auth-card">
+            <div class="auth-header">
+              <h1>Welcome Back</h1>
+              <p>Sign in to your CampusConnect account</p>
+            </div>
+
+            <form id="loginForm" class="auth-form">
+              <div class="form-group">
+                <label for="email">College Email</label>
+                <div class="input-container">
+                  <input type="email" id="email" name="email" required />
+                  <span class="input-icon">✉️</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="password">Password</label>
+                <div class="input-container">
+                  <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    required
+                  />
+                  <span class="input-icon">🔒</span>
+                  <button
+                    type="button"
+                    class="password-toggle"
+                    id="passwordToggle"
+                  >
+                    👁️
+                  </button>
+                </div>
+              </div>
+
+              <div class="form-options">
+                <label class="checkbox-container">
+                  <input type="checkbox" id="rememberMe" />
+                  <span class="checkmark"></span>
+                  Remember me
+                </label>
+                <a href="#" class="forgot-password">Forgot password?</a>
+              </div>
+
+              <button type="submit" class="auth-submit-btn">
+                <span class="btn-text">Sign In</span>
+                <span class="btn-loader"></span>
+              </button>
+
+              <div class="auth-divider">
+                <span>or continue with</span>
+              </div>
+
+              <div class="social-auth">
+                <button type="button" class="social-btn google-btn">
+                  <span class="social-icon">🔍</span>
+                  Google
+                </button>
+                <button type="button" class="social-btn microsoft-btn">
+                  <span class="social-icon">🔷</span>
+                  Microsoft
+                </button>
+              </div>
+
+              <div class="auth-footer">
+                <p>
+                  Don't have an account? <a href="/signup.html">Sign up now</a>
+                </p>
+              </div>
+            </form>
+          </div>
+
+          <div class="auth-visual">
+            <div class="visual-content">
+              <div class="visual-icon">🎓</div>
+              <h2>Connect with Fellow Students</h2>
+              <p>
+                Join thousands of students collaborating and learning together
+              </p>
+              <div class="visual-stats">
+                <div class="stat">
+                  <span class="stat-number">500+</span>
+                  <span class="stat-label">Active Students</span>
+                </div>
+                <div class="stat">
+                  <span class="stat-number">50+</span>
+                  <span class="stat-label">Colleges</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="/js/auth/authManager.js"></script>
+  </body>
+</html>

@@ -1,44 +1,54 @@
 class VideoManager {
-  constructor() {
+  constructor(socket, peerId, isInitiator, localVideoEl, remoteVideoEl) {
+    console.log("VideoManager: Initializing", {
+      peerId,
+      isInitiator,
+      hasLocalVideo: !!localVideoEl,
+      hasRemoteVideo: !!remoteVideoEl,
+      hasSocket: !!socket,
+    });
+
+    this.socket = socket;
+    this.peerId = peerId;
+    this.isInitiator = isInitiator;
+    this.localVideoEl = localVideoEl;
+    this.remoteVideoEl = remoteVideoEl;
+
+    this.peerConnection = null;
     this.localStream = null;
     this.remoteStream = null;
-    this.peerConnection = null;
-    this.isInitiator = false;
-    this.iceCandidates = [];
+    this.isInitialized = false;
+
+    // STUN servers for NAT traversal
+    this.rtcConfiguration = {
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+      ],
+    };
+
+    // Track connection state
+    this.connectionState = "new";
+    this.iceConnectionState = "new";
+
+    console.log("VideoManager: Constructor completed");
   }
 
-  // Initialize video call
-  async initializeCall(peerId, isInitiator) {
-    try {
-      this.peerId = peerId;
-      this.isInitiator = isInitiator;
-
-      // Get user media
-      await this.getUserMedia();
-
-      // Setup peer connection
-      this.setupPeerConnection();
-
-      // Create offer if initiator
-      if (isInitiator) {
-        await this.createOffer();
-      }
-
-      return true;
-    } catch (error) {
-      console.error("Error initializing call:", error);
-      this.handleError("Failed to initialize video call");
-      return false;
+  async initialize() {
+    if (this.isInitialized) {
+      console.warn("VideoManager: Already initialized");
+      return;
     }
-  }
 
-  // Get user media (camera and microphone)
-  async getUserMedia() {
+    console.log("VideoManager: Starting initialization");
+
     try {
+      // 1. Get user's camera and microphone
+      console.log("VideoManager: Requesting media devices");
       this.localStream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: 640 },
+          height: { ideal: 480 },
           frameRate: { ideal: 30 },
         },
         audio: {
@@ -48,222 +58,327 @@ class VideoManager {
         },
       });
 
-      // Display local video
-      const localVideo = document.getElementById("local-video");
-      if (localVideo) {
-        localVideo.srcObject = this.localStream;
+      console.log("VideoManager: Media stream obtained", {
+        videoTracks: this.localStream.getVideoTracks().length,
+        audioTracks: this.localStream.getAudioTracks().length,
+      });
+
+      // 2. Set up local video element
+      if (this.localVideoEl) {
+        this.localVideoEl.srcObject = this.localStream;
+        this.localVideoEl.muted = true; // Mute local video to avoid feedback
+        this.localVideoEl.playsInline = true;
+
+        this.localVideoEl.onloadedmetadata = () => {
+          console.log("VideoManager: Local video metadata loaded");
+          this.localVideoEl.play().catch((error) => {
+            console.error("VideoManager: Failed to play local video", error);
+          });
+        };
+
+        this.localVideoEl.onerror = (error) => {
+          console.error("VideoManager: Local video error", error);
+        };
       }
+
+      // 3. Create the RTCPeerConnection
+      this.setupPeerConnection();
+
+      console.log("VideoManager: Initialization completed successfully");
+      this.isInitialized = true;
     } catch (error) {
-      console.error("Error accessing media devices:", error);
-      throw new Error("Camera/microphone access denied or not available");
+      console.error("VideoManager: Initialization failed", {
+        error: error.message,
+        name: error.name,
+      });
+
+      this.handleError(
+        "Failed to access camera/microphone. Please check permissions."
+      );
+      throw error;
     }
   }
 
-  // Setup RTCPeerConnection
   setupPeerConnection() {
-    const configuration = {
-      iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-      ],
-      iceCandidatePoolSize: 10,
-    };
+    console.log("VideoManager: Setting up peer connection");
 
-    this.peerConnection = new RTCPeerConnection(configuration);
+    try {
+      this.peerConnection = new RTCPeerConnection(this.rtcConfiguration);
 
-    // Add local tracks to connection
-    this.localStream.getTracks().forEach((track) => {
-      this.peerConnection.addTrack(track, this.localStream);
-    });
+      // Add local stream tracks to the connection
+      this.localStream.getTracks().forEach((track) => {
+        console.log("VideoManager: Adding local track", { kind: track.kind });
+        this.peerConnection.addTrack(track, this.localStream);
+      });
 
-    // Setup event handlers
-    this.setupConnectionHandlers();
-  }
-
-  // Setup connection event handlers
-  setupConnectionHandlers() {
-    // Handle incoming tracks
-    this.peerConnection.ontrack = (event) => {
-      console.log("Received remote stream");
-      this.remoteStream = event.streams[0];
-
-      const remoteVideo = document.getElementById("remote-video");
-      if (remoteVideo) {
-        remoteVideo.srcObject = this.remoteStream;
-      }
-    };
-
-    // Handle ICE candidates
-    this.peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        this.sendSignal({
-          type: "ice-candidate",
-          candidate: event.candidate,
+      // Event handler for when the remote stream arrives
+      this.peerConnection.ontrack = (event) => {
+        console.log("VideoManager: Remote track received", {
+          tracks: event.streams.length,
+          kind: event.track.kind,
         });
-      }
-    };
 
-    // Handle connection state changes
-    this.peerConnection.onconnectionstatechange = () => {
-      console.log("Connection state:", this.peerConnection.connectionState);
+        if (event.streams && event.streams[0]) {
+          this.remoteStream = event.streams[0];
 
-      switch (this.peerConnection.connectionState) {
-        case "connected":
-          this.handleCallConnected();
-          break;
-        case "disconnected":
-        case "failed":
-          this.handleCallFailed();
-          break;
-      }
-    };
+          // Set up remote video element
+          if (this.remoteVideoEl) {
+            this.remoteVideoEl.srcObject = this.remoteStream;
+            this.remoteVideoEl.playsInline = true;
 
-    // Handle ICE connection state
-    this.peerConnection.oniceconnectionstatechange = () => {
-      console.log(
-        "ICE connection state:",
-        this.peerConnection.iceConnectionState
-      );
-    };
+            this.remoteVideoEl.onloadedmetadata = () => {
+              console.log("VideoManager: Remote video metadata loaded");
+              this.remoteVideoEl.play().catch((error) => {
+                console.error(
+                  "VideoManager: Failed to play remote video",
+                  error
+                );
+              });
+
+              // Hide waiting overlay when remote video loads
+              const remoteOverlay = document.getElementById("remote-overlay");
+              if (remoteOverlay) {
+                remoteOverlay.style.display = "none";
+              }
+            };
+
+            this.remoteVideoEl.onerror = (error) => {
+              console.error("VideoManager: Remote video error", error);
+            };
+          }
+
+          // Listen for track ended events
+          event.track.onended = () => {
+            console.log("VideoManager: Remote track ended", {
+              kind: event.track.kind,
+            });
+          };
+        }
+      };
+
+      // Event handler for ICE connection state changes
+      this.peerConnection.oniceconnectionstatechange = () => {
+        const newState = this.peerConnection.iceConnectionState;
+        console.log("VideoManager: ICE connection state changed", {
+          from: this.iceConnectionState,
+          to: newState,
+        });
+
+        this.iceConnectionState = newState;
+
+        if (newState === "connected") {
+          console.log("VideoManager: Peer connection established!");
+        } else if (newState === "failed" || newState === "disconnected") {
+          console.error("VideoManager: Peer connection failed or disconnected");
+          this.handleError("Connection lost. Please try again.");
+        }
+      };
+
+      // Event handler for connection state changes
+      this.peerConnection.onconnectionstatechange = () => {
+        const newState = this.peerConnection.connectionState;
+        console.log("VideoManager: Connection state changed", {
+          from: this.connectionState,
+          to: newState,
+        });
+
+        this.connectionState = newState;
+      };
+
+      // Event handler for network candidates
+      this.peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log("VideoManager: ICE candidate generated");
+
+          this.socket.emit("signal", {
+            to: this.peerId,
+            signal: {
+              type: "ice-candidate",
+              candidate: event.candidate,
+            },
+          });
+        } else {
+          console.log("VideoManager: ICE gathering complete");
+        }
+      };
+
+      console.log("VideoManager: Peer connection setup completed");
+    } catch (error) {
+      console.error("VideoManager: Peer connection setup failed", error);
+      throw error;
+    }
   }
 
-  // Create and send offer
   async createOffer() {
     try {
+      console.log("VideoManager: Creating offer");
+
       const offer = await this.peerConnection.createOffer();
+      console.log("VideoManager: Offer created", { type: offer.type });
+
       await this.peerConnection.setLocalDescription(offer);
+      console.log("VideoManager: Local description set");
 
-      this.sendSignal({
-        type: "offer",
-        sdp: offer,
+      this.socket.emit("signal", {
+        to: this.peerId,
+        signal: offer,
       });
+
+      console.log("VideoManager: Offer sent to peer");
     } catch (error) {
-      console.error("Error creating offer:", error);
+      console.error("VideoManager: Error creating offer", error);
+      throw error;
     }
   }
 
-  // Handle incoming offer
-  async handleOffer(offer) {
-    try {
-      await this.peerConnection.setRemoteDescription(offer);
-      const answer = await this.peerConnection.createAnswer();
-      await this.peerConnection.setLocalDescription(answer);
-
-      this.sendSignal({
-        type: "answer",
-        sdp: answer,
-      });
-    } catch (error) {
-      console.error("Error handling offer:", error);
+  async handleSignal(signal) {
+    if (!this.peerConnection) {
+      console.log("VideoManager: Creating peer connection for incoming signal");
+      this.setupPeerConnection();
     }
-  }
 
-  // Handle incoming answer
-  async handleAnswer(answer) {
+    console.log("VideoManager: Handling signal", { type: signal.type });
+
     try {
-      await this.peerConnection.setRemoteDescription(answer);
+      if (signal.type === "offer") {
+        console.log("VideoManager: Processing offer");
+        await this.peerConnection.setRemoteDescription(
+          new RTCSessionDescription(signal)
+        );
 
-      // Add any stored ICE candidates
-      this.iceCandidates.forEach((candidate) => {
-        this.peerConnection.addIceCandidate(candidate);
-      });
-      this.iceCandidates = [];
-    } catch (error) {
-      console.error("Error handling answer:", error);
-    }
-  }
+        console.log("VideoManager: Creating answer");
+        const answer = await this.peerConnection.createAnswer();
+        await this.peerConnection.setLocalDescription(answer);
 
-  // Handle ICE candidate
-  async handleICECandidate(candidate) {
-    try {
-      if (this.peerConnection.remoteDescription) {
-        await this.peerConnection.addIceCandidate(candidate);
+        this.socket.emit("signal", {
+          to: this.peerId,
+          signal: answer,
+        });
+
+        console.log("VideoManager: Answer sent");
+      } else if (signal.type === "answer") {
+        console.log("VideoManager: Processing answer");
+        await this.peerConnection.setRemoteDescription(
+          new RTCSessionDescription(signal)
+        );
+        console.log("VideoManager: Remote description set from answer");
+      } else if (signal.type === "ice-candidate") {
+        console.log("VideoManager: Processing ICE candidate");
+        await this.peerConnection.addIceCandidate(
+          new RTCIceCandidate(signal.candidate)
+        );
+        console.log("VideoManager: ICE candidate added");
       } else {
-        // Store candidate if remote description not set yet
-        this.iceCandidates.push(candidate);
+        console.warn("VideoManager: Unknown signal type", {
+          type: signal.type,
+        });
       }
     } catch (error) {
-      console.error("Error adding ICE candidate:", error);
-    }
-  }
-
-  // Send signaling message
-  sendSignal(signal) {
-    if (window.socket && this.peerId) {
-      window.socket.emit("signal", {
-        to: this.peerId,
-        signal: signal,
-        type: "webrtc",
+      console.error("VideoManager: Error handling signal", {
+        error: error.message,
+        signalType: signal.type,
       });
+      throw error;
     }
   }
 
-  // Handle successful call connection
-  handleCallConnected() {
-    // Update UI to show call is connected
-    const statusElement = document.getElementById("call-status");
-    if (statusElement) {
-      statusElement.textContent = "Connected";
-      statusElement.className = "status-connected";
-    }
-  }
-
-  // Handle call failure
-  handleCallFailed() {
-    this.handleError("Call disconnected unexpectedly");
-  }
-
-  // Error handling
-  handleError(message) {
-    console.error("Video call error:", message);
-
-    // Show error to user
-    const errorElement = document.getElementById("error-message");
-    if (errorElement) {
-      errorElement.textContent = message;
-      errorElement.style.display = "block";
-    }
-  }
-
-  // Cleanup resources
   cleanup() {
+    console.log("VideoManager: Cleaning up resources");
+
+    // Stop all media tracks
+    if (this.localStream) {
+      this.localStream.getTracks().forEach((track) => {
+        console.log("VideoManager: Stopping track", { kind: track.kind });
+        track.stop();
+      });
+      this.localStream = null;
+    }
+
+    // Clear video elements
+    if (this.localVideoEl) {
+      this.localVideoEl.srcObject = null;
+    }
+    if (this.remoteVideoEl) {
+      this.remoteVideoEl.srcObject = null;
+    }
+
+    // Close peer connection
     if (this.peerConnection) {
       this.peerConnection.close();
       this.peerConnection = null;
     }
 
-    if (this.localStream) {
-      this.localStream.getTracks().forEach((track) => track.stop());
-      this.localStream = null;
+    // Show waiting overlay again
+    const remoteOverlay = document.getElementById("remote-overlay");
+    if (remoteOverlay) {
+      remoteOverlay.style.display = "flex";
     }
 
-    this.iceCandidates = [];
+    this.isInitialized = false;
+    console.log("VideoManager: Cleanup completed");
   }
 
-  // Toggle video
   toggleVideo() {
-    if (this.localStream) {
-      const videoTrack = this.localStream.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled;
-        return videoTrack.enabled;
-      }
+    if (!this.localStream) {
+      console.warn("VideoManager: No local stream available for video toggle");
+      return false;
     }
+
+    const videoTrack = this.localStream.getVideoTracks()[0];
+    if (videoTrack) {
+      const newState = !videoTrack.enabled;
+      videoTrack.enabled = newState;
+
+      console.log("VideoManager: Video toggled", { enabled: newState });
+      return newState;
+    }
+
+    console.warn("VideoManager: No video track found");
     return false;
   }
 
-  // Toggle audio
   toggleAudio() {
-    if (this.localStream) {
-      const audioTrack = this.localStream.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        return audioTrack.enabled;
-      }
+    if (!this.localStream) {
+      console.warn("VideoManager: No local stream available for audio toggle");
+      return false;
     }
+
+    const audioTrack = this.localStream.getAudioTracks()[0];
+    if (audioTrack) {
+      const newState = !audioTrack.enabled;
+      audioTrack.enabled = newState;
+
+      console.log("VideoManager: Audio toggled", { enabled: newState });
+      return newState;
+    }
+
+    console.warn("VideoManager: No audio track found");
     return false;
+  }
+
+  getConnectionStatus() {
+    return {
+      connectionState: this.connectionState,
+      iceConnectionState: this.iceConnectionState,
+      hasLocalStream: !!this.localStream,
+      hasRemoteStream: !!this.remoteStream,
+      isInitialized: this.isInitialized,
+    };
+  }
+
+  handleError(message) {
+    console.error("VideoManager: Error occurred", { message });
+
+    // Emit error event that can be handled by the UI
+    if (this.socket) {
+      this.socket.emit("video-error", { message });
+    }
+
+    // Show user-friendly error message
+    if (typeof window.showError === "function") {
+      window.showError(message);
+    } else {
+      alert(`Video Error: ${message}`);
+    }
   }
 }
-
-// Export for use in other modules
-window.VideoManager = VideoManager;

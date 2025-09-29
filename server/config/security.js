@@ -9,13 +9,35 @@ module.exports = {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.socket.io"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        connectSrc: ["'self'", "wss:", "blob:"],
-        mediaSrc: ["'self'", "blob:"],
-        fontSrc: ["'self'"],
-        objectSrc: ["'none'"],
+        scriptSrc: [
+          "'self'",
+          "'unsafe-inline'", // Be aware of this in production
+          "https://cdn.socket.io",
+          "https://cdn.jsdelivr.net",
+          "blob:", // For browser extensions/dev tools
+        ],
+        styleSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "https://fonts.googleapis.com", // Allow Google Fonts stylesheets
+        ],
+        fontSrc: [
+          "'self'",
+          "https://fonts.gstatic.com", // Allow Google Fonts files
+        ],
+        connectSrc: [
+          "'self'",
+          "wss:",
+          "ws:", // For Socket.IO
+          "https://*.supabase.co", // For Supabase
+        ],
+        mediaSrc: [
+          "'self'",
+          "blob:",
+          "data:", // For browser extensions/dev tools
+        ],
         imgSrc: ["'self'", "data:", "https:"],
+        objectSrc: ["'none'"],
       },
     },
     hsts: {

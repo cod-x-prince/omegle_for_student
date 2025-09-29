@@ -1,18 +1,26 @@
 const logger = require("../../utils/logger");
-const pairingManager = require("../pairing/pairingManager");
 
 class SignalingHandler {
   constructor() {
     this.messageCounts = new Map();
-    logger.info("SignalingHandler initialized");
+    this.rateLimitWindow = 60000; // 1 minute
+    this.rateLimitMax = 50; // Max 50 messages per minute
+
+    logger.info("SignalingHandler initialized", {
+      rateLimitWindow: this.rateLimitWindow,
+      rateLimitMax: this.rateLimitMax,
+    });
   }
 
   handleSignal(socket, data) {
+    const startTime = Date.now();
+
     try {
       logger.debug("Processing signal", {
         from: socket.id,
         to: data.to,
         signalType: data.signal?.type,
+        timestamp: startTime,
       });
 
       // Validate signaling data
@@ -20,23 +28,43 @@ class SignalingHandler {
         logger.warn("Invalid signal data received", {
           socketId: socket.id,
           data: this.sanitizeData(data),
+          email: socket.userData?.email,
         });
-        return socket.emit("error", { message: "Invalid signal data" });
+        socket.emit("error", {
+          message: "Invalid signal data",
+          code: "INVALID_SIGNAL",
+        });
+        return;
       }
 
       // Rate limit signaling messages
       if (!this.checkRateLimit(socket.id)) {
-        logger.warn("Signaling rate limit exceeded", { socketId: socket.id });
-        return socket.emit("error", { message: "Rate limit exceeded" });
+        logger.warn("Signaling rate limit exceeded", {
+          socketId: socket.id,
+          email: socket.userData?.email,
+        });
+        socket.emit("error", {
+          message: "Rate limit exceeded",
+          code: "RATE_LIMIT_EXCEEDED",
+        });
+        return;
       }
 
       // Check if users are paired
+      const pairingManager = require("../pairing/pairingManager");
       const peerId = pairingManager.activePairs.get(socket.id);
+
       if (!peerId) {
         logger.warn("Signaling attempt without active pair", {
           socketId: socket.id,
+          email: socket.userData?.email,
+          targetPeer: data.to,
         });
-        return socket.emit("error", { message: "No active pair" });
+        socket.emit("error", {
+          message: "No active pair",
+          code: "NO_ACTIVE_PAIR",
+        });
+        return;
       }
 
       if (peerId !== data.to) {
@@ -44,8 +72,27 @@ class SignalingHandler {
           socketId: socket.id,
           intendedPeer: data.to,
           actualPeer: peerId,
+          email: socket.userData?.email,
         });
-        return socket.emit("error", { message: "Invalid peer" });
+        socket.emit("error", {
+          message: "Invalid peer",
+          code: "INVALID_PEER",
+        });
+        return;
+      }
+
+      // Check if peer is still connected
+      const peerSocket = this.getSocketById(peerId);
+      if (!peerSocket || !peerSocket.connected) {
+        logger.warn("Signaling to disconnected peer", {
+          socketId: socket.id,
+          peerId: peerId,
+        });
+        socket.emit("error", {
+          message: "Peer disconnected",
+          code: "PEER_DISCONNECTED",
+        });
+        return;
       }
 
       // Forward signal to peer
@@ -54,46 +101,95 @@ class SignalingHandler {
         from: socket.id,
         signal: data.signal,
         type: data.type || "webrtc",
+        timestamp: Date.now(),
       });
+
+      const processingTime = Date.now() - startTime;
 
       logger.debug("Signal forwarded successfully", {
         from: socket.id,
         to: peerId,
         type: data.signal.type,
+        processingTime: processingTime,
       });
     } catch (error) {
       logger.error("Error handling signal", {
         socketId: socket.id,
         error: error.message,
         stack: error.stack,
+        processingTime: Date.now() - startTime,
       });
-      socket.emit("error", { message: "Internal server error" });
+      socket.emit("error", {
+        message: "Internal server error",
+        code: "INTERNAL_ERROR",
+      });
     }
   }
 
   validateSignalData(data) {
     if (!data || typeof data !== "object") {
+      logger.debug("Signal data validation failed: not an object");
       return false;
     }
 
     if (!data.signal || typeof data.signal !== "object") {
+      logger.debug(
+        "Signal data validation failed: missing or invalid signal object"
+      );
       return false;
     }
 
     if (!data.to || typeof data.to !== "string") {
+      logger.debug(
+        "Signal data validation failed: missing or invalid 'to' field"
+      );
+      return false;
+    }
+
+    // Validate signal type
+    if (!data.signal.type || typeof data.signal.type !== "string") {
+      logger.debug(
+        "Signal data validation failed: missing or invalid signal type"
+      );
+      return false;
+    }
+
+    const validSignalTypes = ["offer", "answer", "ice-candidate", "candidate"];
+    if (!validSignalTypes.includes(data.signal.type)) {
+      logger.debug("Signal data validation failed: invalid signal type", {
+        type: data.signal.type,
+      });
       return false;
     }
 
     // Validate SDP messages
     if (data.signal.sdp) {
-      if (typeof data.signal.sdp !== "string") return false;
-      if (data.signal.sdp.length > 10000) return false;
+      if (typeof data.signal.sdp !== "string") {
+        logger.debug("Signal data validation failed: SDP not a string");
+        return false;
+      }
+      if (data.signal.sdp.length > 10000) {
+        logger.debug("Signal data validation failed: SDP too long", {
+          length: data.signal.sdp.length,
+        });
+        return false;
+      }
     }
 
     // Validate ICE candidates
     if (data.signal.candidate) {
-      if (typeof data.signal.candidate !== "object") return false;
-      if (!data.signal.candidate.candidate) return false;
+      if (typeof data.signal.candidate !== "object") {
+        logger.debug("Signal data validation failed: candidate not an object");
+        return false;
+      }
+      if (!data.signal.candidate.candidate) {
+        logger.debug("Signal data validation failed: missing candidate string");
+        return false;
+      }
+      if (data.signal.candidate.candidate.length > 1000) {
+        logger.debug("Signal data validation failed: candidate too long");
+        return false;
+      }
     }
 
     return true;
@@ -101,37 +197,97 @@ class SignalingHandler {
 
   checkRateLimit(socketId) {
     const now = Date.now();
-    const windowStart = now - 60000; // 1 minute window
+    const windowStart = now - this.rateLimitWindow;
 
     let messages = this.messageCounts.get(socketId) || [];
 
-    // Remove old messages
+    // Remove old messages outside the current window
     messages = messages.filter((timestamp) => timestamp > windowStart);
 
-    // Check limit (max 50 messages per minute)
-    if (messages.length >= 50) {
+    // Check limit
+    if (messages.length >= this.rateLimitMax) {
+      logger.debug("Rate limit exceeded for socket", {
+        socketId: socketId,
+        messageCount: messages.length,
+        limit: this.rateLimitMax,
+      });
       return false;
     }
 
-    // Add current message
+    // Add current message timestamp
     messages.push(now);
     this.messageCounts.set(socketId, messages);
 
     return true;
   }
 
+  getSocketById(socketId) {
+    try {
+      const io = require("../server").io;
+      return io.sockets.sockets.get(socketId);
+    } catch (error) {
+      logger.error("Error getting socket by ID", {
+        socketId: socketId,
+        error: error.message,
+      });
+      return null;
+    }
+  }
+
   cleanup(socketId) {
+    const messageCount = this.messageCounts.get(socketId)?.length || 0;
     this.messageCounts.delete(socketId);
-    logger.debug("Signaling handler cleaned up", { socketId });
+
+    logger.debug("Signaling handler cleaned up", {
+      socketId: socketId,
+      clearedMessages: messageCount,
+    });
   }
 
   sanitizeData(data) {
     // Remove large fields for logging
     const sanitized = { ...data };
-    if (sanitized.signal && sanitized.signal.sdp) {
-      sanitized.signal.sdp = sanitized.signal.sdp.substring(0, 100) + "...";
+
+    if (sanitized.signal) {
+      if (sanitized.signal.sdp) {
+        sanitized.signal.sdp = sanitized.signal.sdp.substring(0, 100) + "...";
+      }
+      if (sanitized.signal.candidate && sanitized.signal.candidate.candidate) {
+        sanitized.signal.candidate.candidate =
+          sanitized.signal.candidate.candidate.substring(0, 50) + "...";
+      }
     }
+
     return sanitized;
+  }
+
+  // Get statistics for monitoring
+  getStats() {
+    const totalSockets = this.messageCounts.size;
+    const totalMessages = Array.from(this.messageCounts.values()).reduce(
+      (sum, messages) => sum + messages.length,
+      0
+    );
+
+    return {
+      totalSockets: totalSockets,
+      totalMessages: totalMessages,
+      rateLimitWindow: this.rateLimitWindow,
+      rateLimitMax: this.rateLimitMax,
+    };
+  }
+
+  // Reset rate limiting for a specific socket (for testing/admin)
+  resetRateLimit(socketId) {
+    const hadEntries = this.messageCounts.has(socketId);
+    this.messageCounts.delete(socketId);
+
+    logger.info("Rate limit reset for socket", {
+      socketId: socketId,
+      hadEntries: hadEntries,
+    });
+
+    return hadEntries;
   }
 }
 

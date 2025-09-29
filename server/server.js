@@ -7,6 +7,14 @@ const path = require("path");
 // Import configurations
 const securityConfig = require("./config/security");
 const constants = require("./config/constants");
+// Database (SUPABASE) Setup
+const helmet = require("helmet");
+const { createClient } = require("@supabase/supabase-js");
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
 
 // Import modules
 const authMiddleware = require("./modules/auth/authMiddleware");
@@ -27,15 +35,21 @@ class CampusConnectServer {
     this.setupRoutes();
     this.setupSocketIO();
 
-    logger.info("CampusConnectServer instance created");
+    logger.info("CampusConnectServer instance created", {
+      environment: process.env.NODE_ENV || "development",
+      pid: process.pid,
+    });
   }
 
   setupMiddleware() {
     logger.debug("Setting up middleware");
 
-    // CHANGE 1: Trust the proxy
-    // This is crucial for rate limiting and getting the correct IP address on Render
-    this.app.set("trust proxy", 1); // <-- ADD THIS LINE
+    // Trust proxy configuration
+    this.app.set("trust proxy", 1);
+    logger.info("Proxy configuration", {
+      trustProxy: this.app.get("trust proxy"),
+      nodeEnv: process.env.NODE_ENV,
+    });
 
     // Security middleware
     this.app.use(securityConfig.helmetConfig);
@@ -65,13 +79,157 @@ class CampusConnectServer {
   setupRoutes() {
     logger.debug("Setting up routes");
 
+    // API route for signup
+    this.app.post("/api/auth/signup", async (req, res) => {
+      try {
+        const { email, password, firstName, lastName, college, major } =
+          req.body;
+
+        logger.info("Signup attempt", {
+          email: email,
+          ip: req.ip,
+          userAgent: req.get("User-Agent"),
+        });
+
+        // Validate required fields
+        if (!email || !password) {
+          logger.warn("Signup missing required fields", { email: email });
+          return res.status(400).json({
+            error: "Email and password are required",
+          });
+        }
+
+        // Validate email domain
+        const allowedDomains = [".edu", "@cmrit.ac.in"];
+        const isValidEmail = allowedDomains.some((domain) =>
+          email.toLowerCase().endsWith(domain.toLowerCase())
+        );
+
+        if (!isValidEmail) {
+          logger.warn("Invalid email domain attempted", { email: email });
+          return res.status(400).json({
+            error:
+              "Please use a valid college email address (.edu or @cmrit.ac.in)",
+          });
+        }
+
+        // Validate password
+        if (password.length < 6) {
+          logger.warn("Password too short", { email: email });
+          return res.status(400).json({
+            error: "Password must be at least 6 characters long",
+          });
+        }
+
+        const { data, error } = await supabase.auth.signUp({
+          email: email,
+          password: password,
+          options: {
+            data: {
+              first_name: firstName,
+              last_name: lastName,
+              college: college,
+              major: major,
+            },
+          },
+        });
+
+        if (error) {
+          logger.error("Signup Supabase error", {
+            error: error.message,
+            email: email,
+            status: error.status,
+          });
+          return res.status(400).json({ error: error.message });
+        }
+
+        logger.info("User signed up successfully", {
+          email: email,
+          userId: data.user?.id,
+        });
+
+        res.status(200).json({
+          message: "Signup successful! Check your email for verification.",
+          user: data.user,
+        });
+      } catch (error) {
+        logger.error("Signup route unexpected error", {
+          error: error.message,
+          stack: error.stack,
+        });
+        res.status(500).json({ error: "Internal server error" });
+      }
+    });
+
+    // API route for login
+    this.app.post("/api/auth/login", async (req, res) => {
+      try {
+        const { email, password } = req.body;
+
+        logger.info("Login attempt", {
+          email: email,
+          ip: req.ip,
+        });
+
+        if (!email || !password) {
+          logger.warn("Login missing credentials", { email: email });
+          return res
+            .status(400)
+            .json({ error: "Email and password are required" });
+        }
+
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) {
+          logger.error("Login Supabase error", {
+            error: error.message,
+            email: email,
+            status: error.status,
+          });
+          return res.status(401).json({ error: "Invalid credentials" });
+        }
+
+        const jwt = require("jsonwebtoken");
+        const token = jwt.sign(
+          {
+            userId: data.user.id,
+            email: data.user.email,
+          },
+          process.env.JWT_SECRET,
+          { expiresIn: "1h" }
+        );
+
+        logger.info("User logged in successfully", {
+          email: email,
+          userId: data.user.id,
+        });
+
+        res.status(200).json({
+          message: "Login successful",
+          token,
+          user: {
+            id: data.user.id,
+            email: data.user.email,
+          },
+        });
+      } catch (error) {
+        logger.error("Login route unexpected error", {
+          error: error.message,
+          stack: error.stack,
+        });
+        res.status(500).json({ error: "Internal server error" });
+      }
+    });
+
     // Health check endpoint
     this.app.get("/health", (req, res) => {
-      logger.debug("Health check requested");
+      logger.debug("Health check requested", { ip: req.ip });
       res.json({
         status: "OK",
         timestamp: new Date().toISOString(),
-        version: "1.0.0",
         uptime: process.uptime(),
       });
     });
@@ -82,27 +240,57 @@ class CampusConnectServer {
         server: {
           nodeVersion: process.version,
           platform: process.platform,
-          memory: process.memoryUsage(),
           uptime: process.uptime(),
+          memory: process.memoryUsage(),
         },
         pairing: this.pairingManager.getQueueStatus(),
+        environment: process.env.NODE_ENV || "development",
       };
+      logger.debug("Server info requested", { ip: req.ip });
       res.json(info);
     });
 
-    // Serve main application
+    // Config endpoint
+    this.app.get("/api/config", (req, res) => {
+      logger.debug("Config requested", { ip: req.ip });
+      res.json({
+        supabaseUrl: process.env.SUPABASE_URL ? "configured" : "missing",
+        supabaseKey: process.env.SUPABASE_ANON_KEY ? "configured" : "missing",
+        environment: process.env.NODE_ENV || "development",
+      });
+    });
+
+    // 404 handler for API routes
+    this.app.use("/api/*", (req, res) => {
+      logger.warn("404 Not Found for API route", {
+        url: req.originalUrl,
+        method: req.method,
+        ip: req.ip,
+      });
+      res.status(404).json({ error: "API endpoint not found" });
+    });
+
+    // Serve main application for SPA routing
     this.app.get("*", (req, res) => {
-      logger.debug("Serving static file", { path: req.path });
-      res.sendFile(path.join(__dirname, "../public/index.html"));
+      if (
+        !req.path.startsWith("/api/") &&
+        ![
+          "/chat.html",
+          "/login.html",
+          "/signup.html",
+          "/dashboard.html",
+        ].includes(req.path)
+      ) {
+        res.sendFile(path.join(__dirname, "../public/index.html"));
+      }
     });
 
-    // 404 handler
-    this.app.use("*", (req, res) => {
-      logger.warn("404 Not Found", { url: req.originalUrl });
-      res.status(404).json({ error: "Not found" });
+    // In setupRoutes() method, add:
+    this.app.get("/dashboard.html", (req, res) => {
+      res.sendFile(path.join(__dirname, "../public/dashboard.html"));
     });
 
-    // Error handling
+    // Final Express error handler
     this.app.use((err, req, res, next) => {
       logger.error("Express error handler", {
         error: err.message,
@@ -110,17 +298,10 @@ class CampusConnectServer {
         url: req.url,
         method: req.method,
       });
-
       if (res.headersSent) {
         return next(err);
       }
-
-      res.status(500).json({
-        error:
-          process.env.NODE_ENV === "production"
-            ? "Internal server error"
-            : err.message,
-      });
+      res.status(500).json({ error: "Internal server error" });
     });
 
     logger.info("Routes setup completed");
@@ -144,14 +325,32 @@ class CampusConnectServer {
       });
 
       // Add to pairing queue
-      const addedToQueue =this.pairingManager.addToQueue(socket, socket.userData);
+      try {
+        const addedToQueue = this.pairingManager.addToQueue(
+          socket,
+          socket.userData
+        );
 
-      if (!addedToQueue) {
-        logger.warn("User could not be added to queue", {
+        if (!addedToQueue) {
+          logger.warn("User could not be added to queue", {
+            socketId: socket.id,
+            reason: "Already in queue or paired",
+          });
+          socket.emit("error", { message: "Already in queue" });
+          return;
+        }
+
+        logger.debug("User successfully added to pairing queue", {
           socketId: socket.id,
-          reason: "Already in queue or paired",
+          queuePosition: this.pairingManager.waitingQueue.length,
         });
-        socket.emit("error", { message: "Already in queue" });
+      } catch (error) {
+        logger.error("Error adding user to queue", {
+          socketId: socket.id,
+          error: error.message,
+          stack: error.stack,
+        });
+        socket.emit("error", { message: "Failed to join queue" });
         return;
       }
 
@@ -197,6 +396,7 @@ class CampusConnectServer {
         message: "Connected to CampusConnect",
         socketId: socket.id,
         timestamp: Date.now(),
+        queuePosition: this.pairingManager.waitingQueue.length,
       });
 
       logger.debug("Socket event handlers registered", { socketId: socket.id });
@@ -222,6 +422,7 @@ class CampusConnectServer {
         environment: process.env.NODE_ENV || "development",
         port: port,
         pid: process.pid,
+        nodeVersion: process.version,
       });
 
       // Auto-open browser in development mode
@@ -237,10 +438,8 @@ class CampusConnectServer {
     this.setupGracefulShutdown();
   }
 
-  // Auto-open browser method
   async autoOpenBrowser(port) {
     try {
-      // Use dynamic import for the open package (works even if not installed)
       const open = await import("open");
       const url = `http://localhost:${port}`;
 
@@ -255,12 +454,10 @@ class CampusConnectServer {
         suggestion: "Please install the 'open' package: npm install open",
       });
 
-      // Fallback: Try using native commands
       this.fallbackOpenBrowser(port);
     }
   }
 
-  // Fallback method using native commands
   fallbackOpenBrowser(port) {
     try {
       const { exec } = require("child_process");
@@ -284,7 +481,10 @@ class CampusConnectServer {
 
   setupGracefulShutdown() {
     const shutdown = (signal) => {
-      logger.info(`Received ${signal}, shutting down gracefully...`);
+      logger.info(`Received ${signal}, shutting down gracefully...`, {
+        activeConnections: this.io.engine.clientsCount,
+        activePairs: this.pairingManager.activePairs.size / 2,
+      });
 
       // Close Socket.IO
       this.io.close(() => {

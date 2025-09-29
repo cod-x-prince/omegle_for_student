@@ -3,73 +3,48 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-    <!-- Security Headers -->
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; 
-                   script-src 'self' 'unsafe-inline' https://cdn.socket.io; 
-                   style-src 'self' 'unsafe-inline'; 
-                   connect-src 'self' ws: wss: blob:;
-                   media-src 'self' blob:;"
-    />
-
     <title>CampusConnect - Video Chat</title>
     <link rel="stylesheet" href="css/style.css" />
   </head>
-  <body>
+  <body class="chat-page">
     <div class="container">
-      <header>
-        <h1>Video Chat</h1>
-        <div id="call-status" class="status-connecting">Connecting...</div>
+      <header class="chat-header">
+        <div class="nav-brand">
+          <span class="logo-icon">🎓</span>
+          <span class="logo-text">CampusConnect</span>
+        </div>
+        <div id="call-status" class="status-connected">● Connected</div>
       </header>
 
       <main>
         <div id="video-chat-container">
-          <div class="video-wrapper">
-            <video id="local-video" autoplay playsinline muted></video>
-            <div class="video-label">You</div>
-          </div>
-          <div class="video-wrapper">
+          <div class="video-wrapper remote-wrapper">
             <video id="remote-video" autoplay playsinline></video>
             <div class="video-label">Partner</div>
+          </div>
+          <div class="video-wrapper local-wrapper">
+            <video id="local-video" autoplay playsinline muted></video>
+            <div class="video-label">You</div>
           </div>
         </div>
 
         <div class="controls">
           <button id="toggle-video" class="btn-control" title="Toggle Video">
-            📹 Video
+            📹
           </button>
           <button id="toggle-audio" class="btn-control" title="Toggle Audio">
-            🎤 Audio
+            🎤
           </button>
-          <button id="disconnect-btn" class="btn-danger">End Chat</button>
-        </div>
-
-        <!-- Future: Chat interface will be added here -->
-        <div id="chat-interface" style="display: none">
-          <div id="chat-messages"></div>
-          <div class="chat-input">
-            <input
-              type="text"
-              id="chat-input"
-              placeholder="Type a message..."
-            />
-            <button id="send-message">Send</button>
-          </div>
+          <button id="disconnect-btn" class="btn-danger" title="End Chat">
+            ❌
+          </button>
         </div>
       </main>
-
-      <div id="error-message" class="error-message" style="display: none"></div>
     </div>
 
-    <!-- Socket.IO Client -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-
-    <!-- Application Scripts -->
-    <script src="js/utils/security.js"></script>
-    <script src="js/auth/authManager.js"></script>
-    <script src="js/video/videoManager.js"></script>
-    <script src="js/main.js"></script>
+    <script src="/js/auth/authManager.js"></script>
+    <script src="/js/videoManager.js"></script>
+    <script src="/js/chat.js"></script>
   </body>
 </html>

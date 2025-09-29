@@ -1,57 +1,154 @@
 // Main application controller
 class CampusConnectApp {
   constructor() {
+    console.log("CampusConnectApp: Initializing application");
+
     this.authManager = new AuthManager();
-    this.videoManager = new VideoManager();
     this.socket = null;
-    this.currentPage = this.getCurrentPage();
+    this.videoManager = null;
 
     this.initializeApp();
   }
 
   // Initialize application based on current page
   initializeApp() {
-    switch (this.currentPage) {
-      case "index":
+    const currentPage = this.getCurrentPage();
+
+    console.log("CampusConnectApp: Current page detected", {
+      page: currentPage,
+      path: window.location.pathname,
+    });
+
+    switch (currentPage) {
+      case "home":
         this.initializeHomePage();
         break;
       case "chat":
         this.initializeChatPage();
         break;
-      case "verify":
-        this.initializeVerifyPage();
-        break;
       default:
-        console.warn("Unknown page:", this.currentPage);
+        console.warn(
+          "CampusConnectApp: Unknown page, basic initialization only"
+        );
+        this.checkAuthenticationStatus();
     }
   }
 
   // Get current page name from URL
   getCurrentPage() {
     const path = window.location.pathname;
+    if (path === "/" || path.includes("index.html")) return "home";
     if (path.includes("chat.html")) return "chat";
-    if (path.includes("verify.html")) return "verify";
-    return "index";
+    if (path.includes("login.html")) return "login";
+    if (path.includes("signup.html")) return "signup";
+    return "other";
+  }
+
+  // Check and display authentication status
+  checkAuthenticationStatus() {
+    const isAuthenticated = this.authManager.isAuthenticated();
+
+    console.log("CampusConnectApp: Authentication status", {
+      isAuthenticated,
+      currentPage: this.getCurrentPage(),
+    });
+
+    return isAuthenticated;
   }
 
   // Initialize home page functionality
   initializeHomePage() {
-    const emailForm = document.getElementById("email-form");
+    console.log("CampusConnectApp: Initializing home page");
 
-    if (emailForm) {
-      emailForm.addEventListener("submit", (e) => this.handleEmailSubmit(e));
+    const loggedInView = document.getElementById("logged-in-view");
+    const loggedOutView = document.getElementById("logged-out-view");
+    const logoutBtn = document.getElementById("logout-btn");
+    const findPartnerBtn = document.getElementById("find-partner-btn");
+
+    if (!loggedInView || !loggedOutView) {
+      console.error("CampusConnectApp: Required home page elements not found");
+      return;
     }
 
-    // Check if returning from authentication
-    this.checkUrlParameters();
+    const isAuthenticated = this.checkAuthenticationStatus();
+
+    if (isAuthenticated) {
+      // User is logged in, show the matchmaking/lobby view
+      console.log(
+        "CampusConnectApp: User authenticated, showing logged-in view"
+      );
+
+      loggedOutView.style.display = "none";
+      loggedInView.style.display = "block";
+
+      // Automatically start the connection to the server for matchmaking
+      this.initializeSocket();
+
+      // Add event listener for the logout button
+      if (logoutBtn) {
+        logoutBtn.addEventListener("click", () => {
+          console.log("CampusConnectApp: Logout initiated");
+          this.authManager.logout();
+        });
+      }
+
+      // Add event listener for find partner button
+      if (findPartnerBtn) {
+        findPartnerBtn.addEventListener("click", () => {
+          console.log("CampusConnectApp: Find partner button clicked");
+          this.startMatchmaking();
+        });
+      }
+    } else {
+      // User is not logged in, show the normal marketing page
+      console.log(
+        "CampusConnectApp: User not authenticated, showing logged-out view"
+      );
+
+      loggedOutView.style.display = "block";
+      loggedInView.style.display = "none";
+    }
+  }
+
+  // Start the matchmaking process
+  startMatchmaking() {
+    console.log("CampusConnectApp: Starting matchmaking process");
+
+    const findPartnerBtn = document.getElementById("find-partner-btn");
+    const statusDiv = document.getElementById("pairing-status");
+
+    if (findPartnerBtn) {
+      findPartnerBtn.disabled = true;
+      findPartnerBtn.textContent = "Searching for Partner...";
+    }
+
+    if (statusDiv) {
+      statusDiv.innerHTML = `
+        <div class="searching-animation">
+          <h2>🔍 Searching for a study partner...</h2>
+          <p>Please wait while we connect you with another student.</p>
+        </div>
+      `;
+    }
+
+    // Ensure socket is connected
+    if (!this.socket || !this.socket.connected) {
+      console.log("CampusConnectApp: Reconnecting socket for matchmaking");
+      this.initializeSocket();
+    }
   }
 
   // Initialize chat page functionality
   initializeChatPage() {
+    console.log("CampusConnectApp: Initializing chat page");
+
     // Check authentication
     if (!this.authManager.requireAuth()) {
+      console.log("CampusConnectApp: Authentication required for chat page");
       return;
     }
+
+    console.log("CampusConnectApp: User authenticated for chat page");
 
     // Initialize socket connection
     this.initializeSocket();
@@ -59,68 +156,37 @@ class CampusConnectApp {
     // Get pairing data from session storage
     const peerData = this.getPairingData();
     if (!peerData) {
-      this.handleError("Missing pairing information");
+      console.error("CampusConnectApp: No pairing data found for chat page");
+      this.handleError("Missing pairing information. Please try again.");
       return;
     }
 
-    // Initialize video call
-    this.videoManager
-      .initializeCall(peerData.peerId, peerData.initiator)
-      .then((success) => {
-        if (!success) {
-          this.handleError("Failed to start video call");
-        }
-      });
+    console.log("CampusConnectApp: Pairing data retrieved", {
+      peerId: peerData.peerId,
+      initiator: peerData.initiator,
+    });
+
+    // Note: VideoManager initialization happens in chat.js
+    // This is just a fallback for the main app controller
 
     // Setup event listeners
     this.setupChatPageListeners();
   }
 
-  // Handle email form submission
-  async handleEmailSubmit(event) {
-    event.preventDefault();
-
-    const emailInput = document.getElementById("email");
-    const email = emailInput.value.trim().toLowerCase();
-
-    // Validate email
-    if (!this.authManager.validateEmail(email)) {
-      this.showError(
-        "Please enter a valid college email address (.edu or @cmrit.ac.in)"
-      );
-      return;
-    }
-
-    // Show loading state
-    this.setLoadingState(true);
-
-    try {
-      // In a real implementation, this would communicate with the server
-      // For now, we'll simulate token generation
-      const token = this.generateMockToken(email);
-
-      // Store authentication data
-      this.authManager.storeAuthData(token, email);
-
-      // Show waiting message
-      this.showWaitingMessage();
-
-      // Connect to socket (simulated)
-      this.initializeSocket();
-    } catch (error) {
-      this.showError("Authentication failed. Please try again.");
-      console.error("Authentication error:", error);
-    }
-  }
-
   // Initialize socket connection
   initializeSocket() {
-    if (!this.authManager.isAuthenticated()) {
-      console.warn("Cannot initialize socket: User not authenticated");
+    const token = this.authManager.getToken();
+    if (!token) {
+      console.error(
+        "CampusConnectApp: No token available for socket connection"
+      );
+      this.authManager.logout();
       return;
     }
 
-    const token = this.authManager.getToken();
+    console.log("CampusConnectApp: Initializing socket connection");
+
+    // Connect to the server with the authentication token
     this.socket = io({
       auth: {
         token: token,
@@ -128,42 +194,89 @@ class CampusConnectApp {
     });
 
     this.setupSocketEvents();
-    window.socket = this.socket; // Make available globally for other modules
+    window.socket = this.socket; // Make it globally accessible for debugging
   }
 
   // Setup socket event listeners
   setupSocketEvents() {
+    if (!this.socket) {
+      console.error("CampusConnectApp: No socket available for event setup");
+      return;
+    }
+
     this.socket.on("connect", () => {
-      console.log("Connected to server");
+      console.log("CampusConnectApp: Socket connected successfully", {
+        socketId: this.socket.id,
+        authenticated: true,
+      });
     });
 
     this.socket.on("paired", (data) => {
-      this.handlePaired(data);
-    });
+      console.log("CampusConnectApp: Paired with partner!", data);
 
-    this.socket.on("signal", (data) => {
-      this.handleSignal(data);
-    });
+      // Store pairing data in session storage to use on the chat page
+      sessionStorage.setItem(
+        "cc_pairing_data",
+        JSON.stringify({
+          peerId: data.peerId,
+          initiator: data.initiator,
+          pairedAt: Date.now(),
+        })
+      );
 
-    this.socket.on("peer-disconnected", () => {
-      this.handlePeerDisconnected();
+      console.log("CampusConnectApp: Redirecting to chat page");
+
+      // Redirect to the actual chat page
+      window.location.href = "chat.html";
     });
 
     this.socket.on("pairing-timeout", () => {
-      this.handlePairingTimeout();
-    });
+      console.log("CampusConnectApp: Pairing timeout received");
 
-    this.socket.on("error", (error) => {
-      this.handleSocketError(error);
+      const statusDiv = document.getElementById("pairing-status");
+      const findPartnerBtn = document.getElementById("find-partner-btn");
+
+      if (statusDiv) {
+        statusDiv.innerHTML = `
+          <h2>⏰ No partners found right now.</h2>
+          <p>Feel free to wait, or try again later.</p>
+        `;
+      }
+
+      if (findPartnerBtn) {
+        findPartnerBtn.disabled = false;
+        findPartnerBtn.textContent = "Try Again";
+      }
     });
 
     this.socket.on("disconnect", (reason) => {
-      console.log("Disconnected from server:", reason);
+      console.log("CampusConnectApp: Socket disconnected", { reason });
+    });
+
+    this.socket.on("error", (error) => {
+      console.error("CampusConnectApp: Socket error", error);
+
+      // If the token is invalid, the server will disconnect the socket.
+      if (
+        error.message.includes("Invalid token") ||
+        error.message.includes("No token provided") ||
+        error.message.includes("Authentication")
+      ) {
+        console.error("CampusConnectApp: Authentication error, logging out");
+        alert("Your session is invalid. Please log in again.");
+        this.authManager.logout();
+      }
+    });
+
+    this.socket.on("connected", (data) => {
+      console.log("CampusConnectApp: Socket connected message", data);
     });
   }
 
   // Handle pairing success
   handlePaired(data) {
+    console.log("CampusConnectApp: Handling paired event", data);
+
     // Store pairing data
     sessionStorage.setItem(
       "cc_pairing_data",
@@ -174,108 +287,63 @@ class CampusConnectApp {
       })
     );
 
+    console.log("CampusConnectApp: Redirecting to chat page");
+
     // Redirect to chat page
     window.location.href = "chat.html";
-  }
-
-  // Handle signaling messages
-  handleSignal(data) {
-    if (!data.signal) return;
-
-    switch (data.signal.type) {
-      case "offer":
-        this.videoManager.handleOffer(new RTCSessionDescription(data.signal));
-        break;
-      case "answer":
-        this.videoManager.handleAnswer(new RTCSessionDescription(data.signal));
-        break;
-      case "ice-candidate":
-        this.videoManager.handleICECandidate(
-          new RTCIceCandidate(data.signal.candidate)
-        );
-        break;
-    }
-  }
-
-  // Handle peer disconnection
-  handlePeerDisconnected() {
-    this.showMessage("Your partner has disconnected. Returning to homepage.");
-    this.cleanup();
-    setTimeout(() => {
-      window.location.href = "/";
-    }, 3000);
-  }
-
-  // Handle pairing timeout
-  handlePairingTimeout() {
-    this.showMessage("Pairing timeout. No available partners found.");
-    this.cleanup();
-    setTimeout(() => {
-      window.location.href = "/";
-    }, 3000);
-  }
-
-  // Handle socket errors
-  handleSocketError(error) {
-    console.error("Socket error:", error);
-    this.showError("Connection error. Please try again.");
-  }
-
-  // Setup chat page event listeners
-  setupChatPageListeners() {
-    const disconnectBtn = document.getElementById("disconnect-btn");
-    if (disconnectBtn) {
-      disconnectBtn.addEventListener("click", () => this.disconnectCall());
-    }
-
-    // Future: Chat input listeners will be added here
-  }
-
-  // Disconnect call and cleanup
-  disconnectCall() {
-    if (this.socket) {
-      this.socket.disconnect();
-    }
-
-    this.videoManager.cleanup();
-    this.authManager.clearAuthData();
-    sessionStorage.removeItem("cc_pairing_data");
-
-    window.location.href = "/";
   }
 
   // Get pairing data from session storage
   getPairingData() {
     try {
       const data = sessionStorage.getItem("cc_pairing_data");
-      return data ? JSON.parse(data) : null;
-    } catch {
+      const parsedData = data ? JSON.parse(data) : null;
+
+      console.log("CampusConnectApp: Retrieved pairing data", parsedData);
+      return parsedData;
+    } catch (error) {
+      console.error("CampusConnectApp: Error parsing pairing data", error);
       return null;
     }
   }
 
-  // Show loading state
-  setLoadingState(loading) {
-    const button = document.querySelector('button[type="submit"]');
-    if (button) {
-      button.disabled = loading;
-      button.textContent = loading ? "Searching..." : "Find a Partner";
+  // Setup chat page event listeners
+  setupChatPageListeners() {
+    console.log("CampusConnectApp: Setting up chat page listeners");
+
+    const disconnectBtn = document.getElementById("disconnect-btn");
+
+    if (disconnectBtn) {
+      disconnectBtn.addEventListener("click", () => this.disconnectCall());
+    } else {
+      console.warn(
+        "CampusConnectApp: Disconnect button not found on chat page"
+      );
     }
   }
 
-  // Show waiting message
-  showWaitingMessage() {
-    const h1 = document.querySelector("h1");
-    const p = document.querySelector("p");
-    const form = document.getElementById("email-form");
+  // Disconnect call and cleanup
+  disconnectCall() {
+    console.log("CampusConnectApp: Disconnecting call and cleaning up");
 
-    if (h1) h1.textContent = "Searching for a partner...";
-    if (p) p.textContent = "Please wait, we're connecting you.";
-    if (form) form.style.display = "none";
+    if (this.socket) {
+      this.socket.disconnect();
+    }
+
+    if (this.videoManager) {
+      this.videoManager.cleanup();
+    }
+
+    this.authManager.clearAuthData();
+    sessionStorage.removeItem("cc_pairing_data");
+
+    window.location.href = "/";
   }
 
   // Show error message
   showError(message) {
+    console.error("CampusConnectApp: Showing error message", { message });
+
     // Remove existing error messages
     this.clearMessages();
 
@@ -294,12 +362,15 @@ class CampusConnectApp {
     const form = document.getElementById("email-form");
     if (form) {
       form.insertBefore(errorDiv, form.firstChild);
+    } else {
+      // Fallback: append to body
+      document.body.insertBefore(errorDiv, document.body.firstChild);
     }
   }
 
   // Show general message
   showMessage(message) {
-    // Implementation for showing messages
+    console.log("CampusConnectApp: Showing message", { message });
     alert(message); // Replace with better UI in production
   }
 
@@ -313,12 +384,14 @@ class CampusConnectApp {
 
   // Handle errors
   handleError(message) {
-    console.error("Application error:", message);
+    console.error("CampusConnectApp: Application error", message);
     this.showError(message);
   }
 
   // Cleanup resources
   cleanup() {
+    console.log("CampusConnectApp: Cleaning up resources");
+
     if (this.videoManager) {
       this.videoManager.cleanup();
     }
@@ -327,30 +400,17 @@ class CampusConnectApp {
       this.socket.disconnect();
     }
   }
-
-  // Mock token generation (replace with real implementation)
-  generateMockToken(email) {
-    return "mock_jwt_token_" + btoa(email) + "_" + Date.now();
-  }
-
-  // Check URL parameters for authentication results
-  checkUrlParameters() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const error = urlParams.get("error");
-
-    if (error) {
-      this.showError(decodeURIComponent(error));
-    }
-  }
 }
 
 // Initialize application when DOM is loaded
 document.addEventListener("DOMContentLoaded", () => {
+  console.log("CampusConnectApp: DOM loaded, initializing application");
   window.app = new CampusConnectApp();
 });
 
 // Handle page unload
 window.addEventListener("beforeunload", (e) => {
+  console.log("CampusConnectApp: Page unloading, cleaning up");
   if (window.app) {
     window.app.cleanup();
   }

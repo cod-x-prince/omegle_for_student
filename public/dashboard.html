@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CampusConnect - Dashboard</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <!-- Animated Background -->
+    <div class="animated-bg">
+      <div class="bg-particle"></div>
+      <div class="bg-particle"></div>
+      <div class="bg-particle"></div>
+      <div class="bg-particle"></div>
+      <div class="bg-particle"></div>
+    </div>
+
+    <!-- Floating Navigation -->
+    <nav class="floating-nav">
+      <div class="nav-brand">
+        <span class="logo-icon">🎓</span>
+        <span class="logo-text">CampusConnect</span>
+      </div>
+      <div class="nav-links">
+        <span class="nav-link" id="user-email">Loading...</span>
+        <button id="logout-btn" class="nav-btn">Logout</button>
+      </div>
+    </nav>
+
+    <!-- Main Dashboard Content -->
+    <main class="dashboard-main">
+      <div class="container">
+        <!-- Welcome Section -->
+        <section class="welcome-section">
+          <div class="hero-badge">🎯 Ready to Connect</div>
+          <h1 class="hero-title">
+            Welcome to Your
+            <span class="title-line">Study Hub</span>
+          </h1>
+          <p class="hero-subtitle">
+            Connect with fellow students for collaborative learning sessions.
+            Find study partners, share knowledge, and grow together.
+          </p>
+        </section>
+
+        <!-- Quick Actions -->
+        <section class="actions-section">
+          <div class="action-cards">
+            <div class="feature-card">
+              <div class="feature-icon">🔍</div>
+              <h3 class="feature-title">Find Study Partner</h3>
+              <p class="feature-description">
+                Connect with another student for a real-time video study
+                session. Perfect for group projects and collaborative learning.
+              </p>
+              <button id="find-partner-btn" class="cta-primary large">
+                Start Searching
+              </button>
+              <div class="feature-highlight"></div>
+            </div>
+
+            <div class="feature-card">
+              <div class="feature-icon">👥</div>
+              <h3 class="feature-title">Study Groups</h3>
+              <p class="feature-description">
+                Join or create study groups with students from your courses.
+                Collaborate on assignments and share resources.
+              </p>
+              <button class="cta-secondary large" disabled>Coming Soon</button>
+              <div class="feature-highlight"></div>
+            </div>
+
+            <div class="feature-card">
+              <div class="feature-icon">📚</div>
+              <h3 class="feature-title">Study Resources</h3>
+              <p class="feature-description">
+                Access shared notes, study materials, and educational resources
+                from students across your university.
+              </p>
+              <button class="cta-secondary large" disabled>Coming Soon</button>
+              <div class="feature-highlight"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Video Canvas Section (Hidden by default) -->
+        <section class="video-section" id="video-section" style="display: none">
+          <div class="section-header">
+            <h2>Study Session</h2>
+            <p>You're now connected with a study partner</p>
+          </div>
+
+          <div class="video-canvas-container">
+            <!-- Remote User Video -->
+            <div class="video-wrapper remote-wrapper">
+              <video
+                id="remote-video"
+                class="video-element"
+                autoplay
+                playsinline
+              ></video>
+              <div class="video-label">Study Partner</div>
+              <div class="video-overlay" id="remote-overlay">
+                <div class="waiting-message">
+                  <div class="spinner"></div>
+                  <p>Waiting for partner to join...</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Local User Video -->
+            <div class="video-wrapper local-wrapper">
+              <video
+                id="local-video"
+                class="video-element"
+                autoplay
+                playsinline
+                muted
+              ></video>
+              <div class="video-label">You</div>
+            </div>
+          </div>
+
+          <!-- Session Controls -->
+          <div class="session-controls">
+            <button id="toggle-video" class="btn-control" title="Toggle Video">
+              📹
+            </button>
+            <button id="toggle-audio" class="btn-control" title="Toggle Audio">
+              🎤
+            </button>
+            <button id="end-session" class="btn-danger" title="End Session">
+              📞
+            </button>
+          </div>
+
+          <div class="session-info">
+            <p id="call-status" class="status-connected">
+              🔍 Searching for study partner...
+            </p>
+          </div>
+        </section>
+
+        <!-- Matchmaking Status Section -->
+        <section
+          class="status-section"
+          id="status-section"
+          style="display: none"
+        >
+          <div class="status-card">
+            <div class="searching-animation">
+              <div class="spinner"></div>
+              <h3>🔍 Searching for a study partner...</h3>
+              <p>Please wait while we connect you with another student</p>
+              <p id="queue-status" class="queue-info">
+                Position in queue: <span id="queue-position">1</span>
+              </p>
+              <button id="cancel-search-btn" class="cta-secondary">
+                Cancel Search
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Recent Activity -->
+        <section class="activity-section">
+          <h3>Recent Activity</h3>
+          <div class="activity-list">
+            <div class="activity-item">
+              <span class="activity-icon">🕒</span>
+              <span>Ready to start your first study session!</span>
+            </div>
+            <div class="activity-item">
+              <span class="activity-icon">🎯</span>
+              <span>Click "Start Searching" to find a study partner</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Connection Status Indicator -->
+    <div
+      class="connection-indicator"
+      id="connection-indicator"
+      style="display: none"
+    >
+      🟢 Connected
+    </div>
+
+    <!-- Scripts -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/js/auth/authManager.js"></script>
+    <script src="/js/utils/logger.js"></script>
+    <script src="/js/utils/helpers.js"></script>
+    <script src="/js/video/videoManager.js"></script>
+    <script src="/js/dashboard.js"></script>
+  </body>
+</html>

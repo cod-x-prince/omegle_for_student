@@ -6,8 +6,12 @@ class PairingManager {
     this.waitingQueue = [];
     this.activePairs = new Map();
     this.pairingTimeouts = new Map();
+    this.userSockets = new Map(); // Track socket by user ID
 
-    logger.info("PairingManager initialized");
+    logger.info("PairingManager initialized", {
+      initialQueueSize: this.waitingQueue.length,
+      initialPairs: this.activePairs.size,
+    });
   }
 
   addToQueue(socket, userData) {
@@ -15,7 +19,9 @@ class PairingManager {
     if (this.isUserWaiting(socket.id) || this.isUserPaired(socket.id)) {
       logger.warn("User already in queue or paired", {
         socketId: socket.id,
+        email: userData.email,
         queueSize: this.waitingQueue.length,
+        activePairs: this.activePairs.size / 2,
       });
       return false;
     }
@@ -27,12 +33,14 @@ class PairingManager {
     };
 
     this.waitingQueue.push(queueItem);
+    this.userSockets.set(socket.id, socket);
 
     logger.info("User added to pairing queue", {
       socketId: socket.id,
       email: userData.email,
       queueSize: this.waitingQueue.length,
       position: this.waitingQueue.length,
+      totalUsers: this.userSockets.size,
     });
 
     // Set pairing timeout (30 seconds)
@@ -41,20 +49,38 @@ class PairingManager {
     // Try to pair immediately if possible
     this.tryPairing();
 
+    // Notify user of queue position
+    socket.emit("queue-update", {
+      position: this.waitingQueue.length,
+      queueSize: this.waitingQueue.length,
+      estimatedWait: this.waitingQueue.length * 10, // Rough estimate
+    });
+
     return true;
   }
 
   tryPairing() {
+    const queueSize = this.waitingQueue.length;
+
     logger.debug("Attempting to pair users", {
-      queueSize: this.waitingQueue.length,
+      queueSize: queueSize,
+      availablePairs: Math.floor(queueSize / 2),
     });
 
     while (this.waitingQueue.length >= 2) {
       const user1 = this.waitingQueue.shift();
       const user2 = this.waitingQueue.shift();
 
+      logger.debug("Found pair candidates", {
+        user1: user1.socketId,
+        user2: user2.socketId,
+      });
+
       this.createPair(user1, user2);
     }
+
+    // Update remaining users about their new queue position
+    this.updateQueuePositions();
   }
 
   createPair(user1, user2) {
@@ -62,6 +88,8 @@ class PairingManager {
       logger.debug("Creating pair", {
         user1: user1.socketId,
         user2: user2.socketId,
+        user1Email: user1.userData.email,
+        user2Email: user2.userData.email,
       });
 
       // Clear timeouts
@@ -73,36 +101,57 @@ class PairingManager {
       this.activePairs.set(user2.socketId, user1.socketId);
 
       logger.info("Users paired successfully", {
-        user1: { socketId: user1.socketId, email: user1.userData.email },
-        user2: { socketId: user2.socketId, email: user2.userData.email },
+        user1: {
+          socketId: user1.socketId,
+          email: user1.userData.email,
+        },
+        user2: {
+          socketId: user2.socketId,
+          email: user2.userData.email,
+        },
         activePairs: this.activePairs.size / 2,
+        waitingQueue: this.waitingQueue.length,
       });
 
       // Notify both users
-      const io = require("../server").io;
-
       this.io.to(user1.socketId).emit("paired", {
         peerId: user2.socketId,
         initiator: true,
+        pairedAt: Date.now(),
       });
 
       this.io.to(user2.socketId).emit("paired", {
         peerId: user1.socketId,
         initiator: false,
+        pairedAt: Date.now(),
       });
     } catch (error) {
       logger.error("Error creating pair", {
         error: error.message,
         stack: error.stack,
+        user1: user1.socketId,
+        user2: user2.socketId,
       });
 
       // Return users to queue
       this.waitingQueue.unshift(user1, user2);
+
+      // Notify users of pairing error
+      this.io.to(user1.socketId).emit("pairing-error", {
+        message: "Failed to create pair, please try again",
+      });
+      this.io.to(user2.socketId).emit("pairing-error", {
+        message: "Failed to create pair, please try again",
+      });
     }
   }
 
   handleDisconnect(socketId) {
-    logger.debug("Handling user disconnect", { socketId });
+    logger.debug("Handling user disconnect", {
+      socketId: socketId,
+      wasInQueue: this.isUserWaiting(socketId),
+      wasPaired: this.isUserPaired(socketId),
+    });
 
     this.removeFromQueue(socketId);
     this.clearPairingTimeout(socketId);
@@ -110,20 +159,44 @@ class PairingManager {
     const peerId = this.activePairs.get(socketId);
     if (peerId) {
       // Notify peer about disconnection
-      this.io.to(peerId).emit("peer-disconnected");
+      logger.info("Notifying peer about disconnection", {
+        disconnectedUser: socketId,
+        peerId: peerId,
+      });
+
+      this.io.to(peerId).emit("peer-disconnected", {
+        reason: "partner_left",
+        timestamp: Date.now(),
+      });
 
       // Clean up pair
       this.activePairs.delete(socketId);
       this.activePairs.delete(peerId);
 
       logger.info("Pair disconnected and cleaned up", {
-        socketId,
-        peerId,
+        socketId: socketId,
+        peerId: peerId,
         activePairs: this.activePairs.size / 2,
       });
-    } else {
-      logger.debug("User was not in an active pair", { socketId });
+
+      // Add peer back to queue if they're still connected
+      const peerSocket = this.userSockets.get(peerId);
+      if (peerSocket && peerSocket.connected) {
+        logger.info("Adding disconnected peer back to queue", {
+          peerId: peerId,
+        });
+        const userData = peerSocket.userData;
+        this.addToQueue(peerSocket, userData);
+      }
     }
+
+    // Clean up user socket tracking
+    this.userSockets.delete(socketId);
+
+    logger.debug("Disconnect handling completed", {
+      socketId: socketId,
+      remainingUsers: this.userSockets.size,
+    });
   }
 
   // Utility methods
@@ -143,7 +216,8 @@ class PairingManager {
 
     if (this.waitingQueue.length !== initialLength) {
       logger.debug("User removed from queue", {
-        socketId,
+        socketId: socketId,
+        previousQueueSize: initialLength,
         newQueueSize: this.waitingQueue.length,
       });
     }
@@ -159,6 +233,13 @@ class PairingManager {
     logger.debug("Pairing timeout set", {
       socketId: socket.id,
       timeoutMs: 30000,
+      email: socket.userData?.email,
+    });
+
+    // Notify user about timeout
+    socket.emit("pairing-timeout-set", {
+      timeoutMs: 30000,
+      startedAt: Date.now(),
     });
   }
 
@@ -167,30 +248,95 @@ class PairingManager {
     if (timeout) {
       clearTimeout(timeout);
       this.pairingTimeouts.delete(socketId);
-      logger.debug("Pairing timeout cleared", { socketId });
+      logger.debug("Pairing timeout cleared", {
+        socketId: socketId,
+      });
     }
   }
 
   handlePairingTimeout(socketId) {
-    logger.info("Pairing timeout occurred", { socketId });
+    logger.info("Pairing timeout occurred", {
+      socketId: socketId,
+      wasInQueue: this.isUserWaiting(socketId),
+    });
 
     this.removeFromQueue(socketId);
     this.pairingTimeouts.delete(socketId);
+    this.userSockets.delete(socketId);
 
-    this.io.to(socketId).emit("pairing-timeout");
+    const socket = this.io.sockets.sockets.get(socketId);
+    if (socket) {
+      socket.emit("pairing-timeout", {
+        message: "No partner found within timeout period",
+        timestamp: Date.now(),
+      });
+    }
 
-    logger.info("User notified of pairing timeout", { socketId });
+    logger.info("User notified of pairing timeout", {
+      socketId: socketId,
+      remainingQueue: this.waitingQueue.length,
+    });
+  }
+
+  updateQueuePositions() {
+    this.waitingQueue.forEach((user, index) => {
+      const socket = this.userSockets.get(user.socketId);
+      if (socket && socket.connected) {
+        socket.emit("queue-update", {
+          position: index + 1,
+          queueSize: this.waitingQueue.length,
+          estimatedWait: (index + 1) * 10,
+        });
+      }
+    });
   }
 
   getQueueStatus() {
     return {
       waitingUsers: this.waitingQueue.length,
       activePairs: this.activePairs.size / 2,
+      totalUsers: this.userSockets.size,
       queue: this.waitingQueue.map((user) => ({
         socketId: user.socketId,
         email: user.userData.email,
         waitingTime: Date.now() - user.joinedAt,
+        joinedAt: user.joinedAt,
       })),
+      activePairsList: Array.from(this.activePairs.entries()).reduce(
+        (pairs, [key, value]) => {
+          if (key < value) {
+            // Avoid duplicates
+            pairs.push({ user1: key, user2: value });
+          }
+          return pairs;
+        },
+        []
+      ),
+    };
+  }
+
+  // Method to manually remove user (for admin purposes)
+  removeUser(socketId) {
+    logger.warn("Manual user removal requested", { socketId: socketId });
+    this.handleDisconnect(socketId);
+  }
+
+  // Get user statistics
+  getUserStats(socketId) {
+    const inQueue = this.isUserWaiting(socketId);
+    const pairedWith = this.activePairs.get(socketId);
+
+    return {
+      inQueue: inQueue,
+      queuePosition: inQueue
+        ? this.waitingQueue.findIndex((user) => user.socketId === socketId) + 1
+        : null,
+      pairedWith: pairedWith,
+      isPaired: !!pairedWith,
+      waitingTime: inQueue
+        ? Date.now() -
+          this.waitingQueue.find((user) => user.socketId === socketId).joinedAt
+        : null,
     };
   }
 }

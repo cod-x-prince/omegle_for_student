@@ -1,47 +1,66 @@
-const winston = require("winston");
+// Frontend logger utility (browser-compatible)
+class FrontendLogger {
+  constructor() {
+    this.enabled = true;
+    this.level = "debug"; // debug, info, warn, error
+  }
 
-// Custom log format
-const logFormat = winston.format.combine(
-  winston.format.timestamp(),
-  winston.format.errors({ stack: true }),
-  winston.format.json()
-);
+  debug(message, data = {}) {
+    if (this.shouldLog("debug")) {
+      console.log(`🔍 [DEBUG] ${message}`, data);
+    }
+  }
 
-// Create logger instance
-const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || "info",
-  format: logFormat,
-  defaultMeta: { service: "campusconnect-server" },
-  transports: [
-    // Error logs
-    new winston.transports.File({
-      filename: "logs/error.log",
-      level: "error",
-      handleExceptions: true,
-    }),
+  info(message, data = {}) {
+    if (this.shouldLog("info")) {
+      console.log(`ℹ️ [INFO] ${message}`, data);
+    }
+  }
 
-    // Combined logs
-    new winston.transports.File({
-      filename: "logs/combined.log",
-    }),
+  warn(message, data = {}) {
+    if (this.shouldLog("warn")) {
+      console.warn(`⚠️ [WARN] ${message}`, data);
+    }
+  }
 
-    // Console output in development
-    ...(process.env.NODE_ENV !== "production"
-      ? [
-          new winston.transports.Console({
-            format: winston.format.simple(),
-          }),
-        ]
-      : []),
-  ],
-});
+  error(message, data = {}) {
+    if (this.shouldLog("error")) {
+      console.error(`❌ [ERROR] ${message}`, data);
+    }
+  }
 
-// Security: Don't log sensitive information
-logger.addRedaction = (path) => {
-  logger.format = winston.format.combine(
-    winston.format.redact({ paths: path }),
-    logFormat
-  );
-};
+  log(message, data = {}) {
+    this.info(message, data);
+  }
 
-module.exports = logger;
+  shouldLog(level) {
+    if (!this.enabled) return false;
+
+    const levels = {
+      debug: 0,
+      info: 1,
+      warn: 2,
+      error: 3,
+    };
+
+    return levels[level] >= levels[this.level];
+  }
+
+  // Socket-specific logging
+  socket(message, data = {}) {
+    this.info(`[SOCKET] ${message}`, data);
+  }
+
+  // Video-specific logging
+  video(message, data = {}) {
+    this.debug(`[VIDEO] ${message}`, data);
+  }
+
+  // Auth-specific logging
+  auth(message, data = {}) {
+    this.info(`[AUTH] ${message}`, data);
+  }
+}
+
+// Create global logger instance
+window.logger = new FrontendLogger();
