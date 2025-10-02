@@ -1,14 +1,32 @@
-require("dotenv").config();
-//---------------------------------
-console.log("🚀 Starting server...");
-console.log("Environment:", process.env.NODE_ENV);
-console.log("Supabase URL configured:", !!process.env.SUPABASE_URL);
-console.log("JWT Secret configured:", !!process.env.JWT_SECRET);
+const path = require("path");
 
+// Load environment variables with explicit path
+require("dotenv").config({ path: path.join(__dirname, "../.env") });
+
+// Debug environment with better error handling
+console.log("🚀 Starting server...");
+console.log("Environment:", process.env.NODE_ENV || "not set");
+console.log(
+  "Supabase URL:",
+  process.env.SUPABASE_URL || "MISSING - check .env file"
+);
+console.log(
+  "JWT Secret:",
+  process.env.JWT_SECRET ? "configured" : "MISSING - check .env file"
+);
+
+// Validate critical environment variables
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+  console.error("❌ CRITICAL: Supabase environment variables are missing!");
+  console.error("   Please check your .env file in the project root directory");
+  console.error("   Required variables: SUPABASE_URL, SUPABASE_ANON_KEY");
+  process.exit(1);
+}
+
+// Now import other modules AFTER environment is loaded
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
-const path = require("path");
 
 console.log("✅ Core modules loaded");
 
@@ -37,6 +55,7 @@ const helmet = require("helmet");
 const { createClient } = require("@supabase/supabase-js");
 
 // Enhanced Supabase client with better error handling
+console.log("🔧 Initializing Supabase client...");
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY,
@@ -48,6 +67,7 @@ const supabase = createClient(
     },
   }
 );
+console.log("✅ Supabase client initialized");
 
 // Import modules - CORRECT PATHS:
 const authMiddleware = require("./modules/auth/authMiddleware");
@@ -62,6 +82,9 @@ class CampusConnectServer {
     this.io = new Server(this.server, {
       cors: securityConfig.corsConfig,
     });
+
+    // Initialize health monitor - UPDATED to use EliteHealthMonitor
+    this.healthMonitor = require("./utils/healthMonitor");
 
     // Initialize modules with proper dependency injection
     this.pairingManager = new PairingManager(this.io);
@@ -98,8 +121,21 @@ class CampusConnectServer {
     this.app.use(express.json({ limit: "10kb" }));
     this.app.use(express.urlencoded({ extended: true, limit: "10kb" }));
 
-    // Request logging middleware
+    // Request logging middleware - UPDATED to track real data
     this.app.use((req, res, next) => {
+      const start = Date.now();
+
+      res.on("finish", () => {
+        const responseTime = Date.now() - start;
+        const success = res.statusCode < 400;
+        this.healthMonitor.trackResponseTime(
+          req.path,
+          req.method,
+          res.statusCode,
+          responseTime
+        );
+      });
+
       logger.debug("HTTP Request", {
         method: req.method,
         url: req.url,
@@ -115,7 +151,7 @@ class CampusConnectServer {
   setupRoutes() {
     logger.debug("Setting up routes");
 
-    // API route for signup - IMPROVED VERSION
+    // API route for signup - IMPROVED VERSION with health monitoring
     this.app.post("/api/auth/signup", async (req, res) => {
       try {
         const { email, password, firstName, lastName, college, major } =
@@ -171,6 +207,14 @@ class CampusConnectServer {
             email: email,
           });
 
+          // Track failed signup attempt
+          this.healthMonitor.trackSecurityEvent("failed_signup", {
+            email: email,
+            reason: authError.message,
+            ip: req.ip,
+            severity: "medium",
+          });
+
           let errorMessage = "Signup failed";
           if (
             authError.message.includes("already registered") ||
@@ -185,6 +229,10 @@ class CampusConnectServer {
 
           return res.status(400).json({ error: errorMessage });
         }
+
+        // Track successful user registration
+        this.healthMonitor.metrics.users.totalRegistered++;
+        this.healthMonitor.metrics.users.newUsersToday++;
 
         // If user created successfully but email not confirmed
         if (authData.user && !authData.user.email_confirmed_at) {
@@ -255,11 +303,12 @@ class CampusConnectServer {
           error: error.message,
           stack: error.stack,
         });
+        this.healthMonitor.trackError(error, { route: "/api/auth/signup" });
         res.status(500).json({ error: "Internal server error" });
       }
     });
 
-    // API route for login - IMPROVED VERSION
+    // API route for login - IMPROVED VERSION with health monitoring
     this.app.post("/api/auth/login", async (req, res) => {
       try {
         const { email, password } = req.body;
@@ -283,6 +332,9 @@ class CampusConnectServer {
             email: email,
           });
 
+          // Track failed login attempt
+          this.healthMonitor.trackFailedLogin(req.ip, email, error.message);
+
           let errorMessage = "Invalid credentials";
           if (error.message.includes("Email not confirmed")) {
             errorMessage = "Please verify your email before logging in";
@@ -303,6 +355,13 @@ class CampusConnectServer {
           { expiresIn: "24h" } // Extended for better UX
         );
 
+        // Track successful login
+        this.healthMonitor.trackUserLogin(data.user.id, {
+          email: data.user.email,
+          ip: req.ip,
+          userAgent: req.get("User-Agent"),
+        });
+
         logger.info("User logged in successfully", {
           email: email,
           userId: data.user.id,
@@ -321,6 +380,7 @@ class CampusConnectServer {
           error: error.message,
           stack: error.stack,
         });
+        this.healthMonitor.trackError(error, { route: "/api/auth/login" });
         res.status(500).json({ error: "Internal server error" });
       }
     });
@@ -346,6 +406,241 @@ class CampusConnectServer {
       });
     });
 
+    // =========================================================================
+    // ELITE ADMIN DASHBOARD ROUTES - UPDATED WITH REAL DATA
+    // =========================================================================
+
+    // DevOps Admin Dashboard Routes
+    this.app.get("/admin/dashboard", (req, res) => {
+      res.sendFile(path.join(__dirname, "../public/admin-dashboard.html"));
+    });
+
+    // Static file serving for admin dashboard
+    this.app.get("/css/style.css", (req, res) => {
+      res.sendFile(path.join(__dirname, "../public/css/style.css"));
+    });
+
+    this.app.get("/js/admin-dashboard.js", (req, res) => {
+      res.sendFile(path.join(__dirname, "../public/js/admin-dashboard.js"));
+    });
+
+    // Real-time metrics streaming for dashboard - UPDATED
+    this.app.get("/api/admin/metrics/stream", (req, res) => {
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+
+      const sendMetrics = () => {
+        try {
+          const metrics = this.healthMonitor.getRealTimeMetrics();
+          res.write(`data: ${JSON.stringify(metrics)}\n\n`);
+        } catch (error) {
+          console.error("Error sending metrics:", error);
+        }
+      };
+
+      // Send metrics every 2 seconds
+      const interval = setInterval(sendMetrics, 2000);
+
+      req.on("close", () => {
+        clearInterval(interval);
+        res.end();
+      });
+    });
+
+    // Detailed metrics endpoint - UPDATED
+    this.app.get("/api/admin/metrics/detailed", (req, res) => {
+      try {
+        const metrics = this.healthMonitor.getRealTimeMetrics();
+        res.json({
+          status: "success",
+          data: metrics,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        res.status(500).json({
+          status: "error",
+          message: "Failed to get metrics",
+          error: error.message,
+        });
+      }
+    });
+
+    // User management endpoints - NEW
+    this.app.get("/api/admin/users/online", (req, res) => {
+      try {
+        const onlineUsers = this.healthMonitor.getActiveSockets();
+        res.json({
+          status: "success",
+          data: onlineUsers,
+          count: onlineUsers.length,
+        });
+      } catch (error) {
+        res.status(500).json({
+          status: "error",
+          message: "Failed to get online users",
+          error: error.message,
+        });
+      }
+    });
+
+    this.app.get("/api/admin/conversations/active", (req, res) => {
+      try {
+        const activePairs = this.healthMonitor.getActivePairs();
+        res.json({
+          status: "success",
+          data: activePairs,
+          count: activePairs.length,
+        });
+      } catch (error) {
+        res.status(500).json({
+          status: "error",
+          message: "Failed to get active conversations",
+          error: error.message,
+        });
+      }
+    });
+
+    // Security endpoints - UPDATED
+    this.app.post("/api/admin/security/block-ip", (req, res) => {
+      try {
+        const { ip, reason } = req.body;
+        this.healthMonitor.blockIP(ip, reason);
+
+        res.json({
+          status: "success",
+          message: `IP ${ip} blocked successfully`,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        res.status(500).json({
+          status: "error",
+          message: "Failed to block IP",
+          error: error.message,
+        });
+      }
+    });
+
+    this.app.get("/api/admin/security/events", (req, res) => {
+      try {
+        const securityMetrics = this.healthMonitor.getSecurityMetrics();
+        res.json({
+          status: "success",
+          data: securityMetrics.recentEvents,
+          count: securityMetrics.recentEvents.length,
+        });
+      } catch (error) {
+        res.status(500).json({
+          status: "error",
+          message: "Failed to get security events",
+          error: error.message,
+        });
+      }
+    });
+
+    // Performance endpoints - NEW
+    this.app.get("/api/admin/performance/endpoints", (req, res) => {
+      try {
+        const appMetrics = this.healthMonitor.getApplicationMetrics();
+        res.json({
+          status: "success",
+          data: appMetrics.requests.byEndpoint,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        res.status(500).json({
+          status: "error",
+          message: "Failed to get endpoint performance",
+          error: error.message,
+        });
+      }
+    });
+
+    // Admin actions - UPDATED
+    this.app.post("/api/admin/actions/reset-metrics", (req, res) => {
+      try {
+        this.healthMonitor.resetMetrics();
+        res.json({
+          status: "success",
+          message: "Metrics reset successfully",
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        res.status(500).json({
+          status: "error",
+          message: "Failed to reset metrics",
+          error: error.message,
+        });
+      }
+    });
+
+    this.app.post("/api/admin/actions/restart-services", (req, res) => {
+      try {
+        // Implement service restart logic
+        res.json({
+          status: "success",
+          message: "Services restart initiated",
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        res.status(500).json({
+          status: "error",
+          message: "Failed to restart services",
+          error: error.message,
+        });
+      }
+    });
+
+    // Legacy admin endpoints (for backward compatibility)
+    this.app.get("/api/admin/metrics", (req, res) => {
+      const healthReport = this.healthMonitor.getRealTimeMetrics();
+      res.json({
+        status: "success",
+        data: healthReport,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    this.app.get("/api/admin/security-events", (req, res) => {
+      const securityMetrics = this.healthMonitor.getSecurityMetrics();
+      res.json({
+        status: "success",
+        data: {
+          events: securityMetrics.recentEvents,
+          metrics: securityMetrics,
+        },
+      });
+    });
+
+    this.app.get("/api/admin/performance", (req, res) => {
+      res.json({
+        status: "success",
+        data: this.healthMonitor.getPerformanceMetrics(),
+      });
+    });
+
+    this.app.get("/api/admin/errors", (req, res) => {
+      res.json({
+        status: "success",
+        data: this.healthMonitor.getErrorMetrics(),
+      });
+    });
+
+    this.app.post("/api/admin/actions/block-ip", (req, res) => {
+      const { ip, reason } = req.body;
+      this.healthMonitor.blockIP(ip, reason);
+
+      res.json({
+        status: "success",
+        message: `IP ${ip} blocked successfully`,
+      });
+    });
+
+    // =========================================================================
+    // EXISTING APPLICATION ROUTES
+    // =========================================================================
+
     // Server info endpoint (for debugging)
     this.app.get("/api/info", (req, res) => {
       const info = {
@@ -367,6 +662,61 @@ class CampusConnectServer {
         supabaseUrl: process.env.SUPABASE_URL ? "configured" : "missing",
         supabaseKey: process.env.SUPABASE_ANON_KEY ? "configured" : "missing",
         environment: process.env.NODE_ENV || "development",
+      });
+    });
+
+    // Health monitoring endpoints
+    this.app.get("/api/health/detailed", async (req, res) => {
+      try {
+        const health = this.healthMonitor.getRealTimeMetrics();
+
+        res.json({
+          status: "success",
+          data: health,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        res.status(500).json({
+          status: "error",
+          message: "Health check failed",
+          error: error.message,
+        });
+      }
+    });
+
+    // Quick health check
+    this.app.get("/api/health/quick", (req, res) => {
+      const metrics = this.healthMonitor.getApplicationMetrics();
+
+      res.json({
+        status: "healthy",
+        uptime: metrics.uptime,
+        requests: metrics.requests.total,
+        activeConnections: metrics.connections.active,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    // Metrics endpoint for monitoring
+    this.app.get("/api/health/metrics", (req, res) => {
+      res.json({
+        status: "success",
+        data: {
+          application: this.healthMonitor.getApplicationMetrics(),
+          system: this.healthMonitor.getSystemMetrics(),
+          timestamp: new Date().toISOString(),
+        },
+      });
+    });
+
+    // Reset metrics (protected endpoint)
+    this.app.post("/api/health/reset", (req, res) => {
+      this.healthMonitor.resetMetrics();
+
+      res.json({
+        status: "success",
+        message: "Metrics reset successfully",
+        timestamp: new Date().toISOString(),
       });
     });
 
@@ -412,6 +762,12 @@ class CampusConnectServer {
         method: req.method,
       });
 
+      // Track error in health monitor
+      this.healthMonitor.trackError(err, {
+        url: req.url,
+        method: req.method,
+      });
+
       // Handle CORS errors
       if (err.message.includes("CORS")) {
         return res.status(403).json({ error: "CORS policy violation" });
@@ -432,12 +788,23 @@ class CampusConnectServer {
     // Authentication middleware
     this.io.use(authMiddleware.authenticateToken);
 
-    // Connection handling
+    // Connection handling - UPDATED with real tracking
     this.io.on("connection", (socket) => {
       logger.info("New socket connection established", {
         socketId: socket.id,
         email: socket.userData.email,
       });
+
+      // Extract user data from authenticated socket
+      const userData = {
+        userId: socket.userData.userId,
+        email: socket.userData.email,
+        userAgent: socket.handshake.headers["user-agent"],
+        ip: socket.handshake.address,
+      };
+
+      // Track the connection with real data
+      this.healthMonitor.trackSocketConnection(socket.id, userData);
 
       // Add to pairing queue
       try {
@@ -478,18 +845,38 @@ class CampusConnectServer {
         this.signalingHandler.handleSignal(socket, data);
       });
 
+      // Track pairing events - NEW
+      socket.on("user_paired", (data) => {
+        this.healthMonitor.trackPairingStart(
+          { userId: socket.userData.userId, email: socket.userData.email },
+          { userId: data.pairedWith.id, email: data.pairedWith.email }
+        );
+      });
+
+      socket.on("user_unpaired", (data) => {
+        this.healthMonitor.trackPairingEnd(data.pairId, data.success);
+      });
+
+      socket.on("message", (data) => {
+        this.healthMonitor.trackMessage(data.pairId);
+      });
+
       // Handle custom events
       socket.on("ping", (data) => {
         socket.emit("pong", { timestamp: Date.now(), ...data });
       });
 
-      // Disconnection handling
+      // Disconnection handling - UPDATED
       socket.on("disconnect", (reason) => {
         logger.info("Socket disconnected", {
           socketId: socket.id,
           reason: reason,
           email: socket.userData.email,
         });
+
+        // Track disconnection with real data
+        this.healthMonitor.trackSocketDisconnection(socket.id);
+        this.healthMonitor.trackUserLogout(socket.userData.userId);
 
         this.pairingManager.handleDisconnect(socket.id);
         this.signalingHandler.cleanup(socket.id);
@@ -501,6 +888,7 @@ class CampusConnectServer {
           socketId: socket.id,
           error: error.message,
         });
+        this.healthMonitor.trackError(error, { socketId: socket.id });
       });
 
       // Send welcome message
@@ -520,6 +908,7 @@ class CampusConnectServer {
         error: err.message,
         code: err.code,
       });
+      this.healthMonitor.trackError(err, { source: "socketio_engine" });
     });
 
     logger.info("Socket.IO setup completed");

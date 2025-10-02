@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CampusConnect - Elite DevOps Dashboard</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr/npm/apexcharts"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.0.4/build/global/luxon.min.js"></script>
+  </head>
+  <body>
+    <div class="dashboard">
+      <!-- Sidebar -->
+      <div class="sidebar">
+        <div class="sidebar-header">
+          <h2>🚀 CampusConnect Elite</h2>
+          <div class="server-status">
+            <span id="status-indicator" class="status-dot online"></span>
+            <span id="status-text">Online</span>
+          </div>
+        </div>
+        <nav class="sidebar-nav">
+          <div class="nav-item active" data-section="overview">
+            <span class="nav-icon">📊</span>
+            <span class="nav-text">Overview</span>
+          </div>
+          <div class="nav-item" data-section="performance">
+            <span class="nav-icon">⚡</span>
+            <span class="nav-text">Performance</span>
+          </div>
+          <div class="nav-item" data-section="security">
+            <span class="nav-icon">🛡️</span>
+            <span class="nav-text">Security Center</span>
+          </div>
+          <div class="nav-item" data-section="users">
+            <span class="nav-icon">👥</span>
+            <span class="nav-text">User Management</span>
+          </div>
+          <div class="nav-item" data-section="analytics">
+            <span class="nav-icon">📈</span>
+            <span class="nav-text">Business Analytics</span>
+          </div>
+          <div class="nav-item" data-section="realtime">
+            <span class="nav-icon">🔴</span>
+            <span class="nav-text">Real-time Monitor</span>
+          </div>
+          <div class="nav-item" data-section="database">
+            <span class="nav-icon">💾</span>
+            <span class="nav-text">Database</span>
+          </div>
+          <div class="nav-item" data-section="system">
+            <span class="nav-icon">🖥️</span>
+            <span class="nav-text">System Health</span>
+          </div>
+          <div class="nav-item" data-section="settings">
+            <span class="nav-icon">⚙️</span>
+            <span class="nav-text">Settings</span>
+          </div>
+        </nav>
+        <div class="sidebar-footer">
+          <div class="uptime">
+            Uptime: <span id="uptime-display">00:00:00</span>
+          </div>
+          <div class="version">v2.1.0</div>
+        </div>
+      </div>
+
+      <!-- Main Content -->
+      <div class="main-content">
+        <!-- Header -->
+        <header class="content-header">
+          <h1 id="section-title">System Overview</h1>
+          <div class="header-actions">
+            <div class="quick-stats">
+              <span class="quick-stat">
+                <span class="stat-label">CPU:</span>
+                <span id="quick-cpu" class="stat-value">0%</span>
+              </span>
+              <span class="quick-stat">
+                <span class="stat-label">Memory:</span>
+                <span id="quick-memory" class="stat-value">0%</span>
+              </span>
+              <span class="quick-stat">
+                <span class="stat-label">Active:</span>
+                <span id="quick-active" class="stat-value">0</span>
+              </span>
+            </div>
+            <button class="btn btn-secondary" onclick="refreshData()">
+              🔄 Refresh
+            </button>
+            <button class="btn btn-warning" onclick="exportData()">
+              📊 Export
+            </button>
+            <button class="btn btn-danger" onclick="showEmergencyPanel()">
+              🚨 Emergency
+            </button>
+          </div>
+        </header>
+
+        <!-- Overview Section -->
+        <section id="overview-section" class="section active">
+          <!-- Quick Actions -->
+          <div class="quick-actions">
+            <div class="action-card" onclick="quickAction('restart')">
+              <div class="action-icon">🔄</div>
+              <span>Restart Services</span>
+            </div>
+            <div class="action-card" onclick="quickAction('backup')">
+              <div class="action-icon">💾</div>
+              <span>Backup Now</span>
+            </div>
+            <div class="action-card" onclick="quickAction('cleanup')">
+              <div class="action-icon">🧹</div>
+              <span>Clean Cache</span>
+            </div>
+            <div class="action-card" onclick="quickAction('logs')">
+              <div class="action-icon">📋</div>
+              <span>View Logs</span>
+            </div>
+          </div>
+
+          <!-- Stats Grid -->
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon">📡</div>
+              <div class="stat-info">
+                <h3>Total Requests</h3>
+                <div id="total-requests" class="stat-number">0</div>
+                <div class="stat-trend" id="request-trend">+0%</div>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon">🔗</div>
+              <div class="stat-info">
+                <h3>Active Connections</h3>
+                <div id="active-connections" class="stat-number">0</div>
+                <div class="stat-subtext">
+                  Peak: <span id="peak-connections">0</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon">👥</div>
+              <div class="stat-info">
+                <h3>Active Users</h3>
+                <div id="active-users" class="stat-number">0</div>
+                <div class="stat-subtext">
+                  Online: <span id="online-users">0</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon">💬</div>
+              <div class="stat-info">
+                <h3>Active Conversations</h3>
+                <div id="active-conversations" class="stat-number">0</div>
+                <div class="stat-subtext">
+                  Messages/min: <span id="messages-per-minute">0</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon">⚡</div>
+              <div class="stat-info">
+                <h3>Response Time</h3>
+                <div id="avg-response" class="stat-number">0ms</div>
+                <div class="stat-subtext">
+                  P95: <span id="p95-response">0ms</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon">✅</div>
+              <div class="stat-info">
+                <h3>Success Rate</h3>
+                <div id="success-rate" class="stat-number">0%</div>
+                <div class="stat-subtext">
+                  Error Rate: <span id="error-rate">0%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Real-time Charts -->
+          <div class="charts-row">
+            <div class="chart-card">
+              <div class="chart-header">
+                <h3>Real-time Traffic</h3>
+                <div class="chart-controls">
+                  <button class="btn-sm" onclick="changeTimeRange('1h')">
+                    1H
+                  </button>
+                  <button class="btn-sm active" onclick="changeTimeRange('6h')">
+                    6H
+                  </button>
+                  <button class="btn-sm" onclick="changeTimeRange('24h')">
+                    24H
+                  </button>
+                </div>
+              </div>
+              <div class="chart-container">
+                <canvas id="trafficChart"></canvas>
+              </div>
+            </div>
+
+            <div class="chart-card">
+              <div class="chart-header">
+                <h3>System Resources</h3>
+              </div>
+              <div class="chart-container">
+                <div id="resourcesChart"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Alerts & Activity -->
+          <div class="dashboard-grid">
+            <div class="info-card">
+              <div class="info-header">
+                <h3>🚨 Active Alerts</h3>
+                <span class="badge danger" id="alerts-count">0</span>
+              </div>
+              <div class="alerts-list" id="alerts-list">
+                <div class="empty-state">No active alerts</div>
+              </div>
+            </div>
+
+            <div class="info-card">
+              <div class="info-header">
+                <h3>📈 Recent Activity</h3>
+              </div>
+              <div class="activity-list" id="activity-list">
+                <div class="empty-state">No recent activity</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Performance Section -->
+        <section id="performance-section" class="section">
+          <div class="section-header">
+            <h2>Performance Analytics</h2>
+            <p>Detailed performance metrics and system monitoring</p>
+          </div>
+
+          <div class="performance-grid">
+            <div class="chart-card large">
+              <div class="chart-header">
+                <h3>Response Time Distribution</h3>
+              </div>
+              <div class="chart-container">
+                <canvas id="responseTimeChart"></canvas>
+              </div>
+            </div>
+
+            <div class="chart-card">
+              <div class="chart-header">
+                <h3>Endpoint Performance</h3>
+              </div>
+              <div class="chart-container">
+                <canvas id="endpointChart"></canvas>
+              </div>
+            </div>
+
+            <div class="chart-card">
+              <div class="chart-header">
+                <h3>Error Rates</h3>
+              </div>
+              <div class="chart-container">
+                <canvas id="errorRateChart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="metrics-table">
+            <h3>Detailed Performance Metrics</h3>
+            <div class="table-container">
+              <table id="performance-table">
+                <thead>
+                  <tr>
+                    <th>Endpoint</th>
+                    <th>Requests</th>
+                    <th>Avg Response</th>
+                    <th>Success Rate</th>
+                    <th>Errors</th>
+                  </tr>
+                </thead>
+                <tbody id="performance-tbody">
+                  <!-- Filled by JavaScript -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Security Center Section -->
+        <section id="security-section" class="section">
+          <div class="section-header">
+            <h2>Security Center</h2>
+            <p>Security monitoring, threat detection, and access control</p>
+          </div>
+
+          <div class="security-grid">
+            <div class="security-card danger">
+              <div class="security-icon">🔒</div>
+              <div class="security-info">
+                <h3>Failed Logins</h3>
+                <div id="failed-logins" class="security-number">0</div>
+                <div class="security-trend">Last 24h</div>
+              </div>
+            </div>
+
+            <div class="security-card warning">
+              <div class="security-icon">🚫</div>
+              <div class="security-info">
+                <h3>Blocked IPs</h3>
+                <div id="blocked-ips" class="security-number">0</div>
+                <div class="security-trend">Active blocks</div>
+              </div>
+            </div>
+
+            <div class="security-card info">
+              <div class="security-icon">⚠️</div>
+              <div class="security-info">
+                <h3>Suspicious Activities</h3>
+                <div id="suspicious-activities" class="security-number">0</div>
+                <div class="security-trend">Today</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="security-actions">
+            <h3>Security Controls</h3>
+            <div class="action-buttons">
+              <button class="btn btn-danger" onclick="showIPBlockModal()">
+                🚫 Block IP Address
+              </button>
+              <button class="btn btn-warning" onclick="showRateLimitModal()">
+                ⚡ Adjust Rate Limits
+              </button>
+              <button class="btn btn-info" onclick="viewSecurityLogs()">
+                📋 Security Logs
+              </button>
+            </div>
+          </div>
+
+          <div class="security-events">
+            <h3>Recent Security Events</h3>
+            <div class="events-table">
+              <table id="security-events-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Type</th>
+                    <th>IP Address</th>
+                    <th>Severity</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody id="security-events-tbody">
+                  <!-- Filled by JavaScript -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- User Management Section -->
+        <section id="users-section" class="section">
+          <div class="section-header">
+            <h2>User Management</h2>
+            <p>Real-time user monitoring and management</p>
+          </div>
+
+          <div class="users-stats">
+            <div class="stat-card">
+              <div class="stat-icon">👤</div>
+              <div class="stat-info">
+                <h3>Total Users</h3>
+                <div id="total-users" class="stat-number">0</div>
+                <div class="stat-subtext">Registered</div>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon">🔗</div>
+              <div class="stat-info">
+                <h3>Active Sessions</h3>
+                <div id="active-sessions" class="stat-number">0</div>
+                <div class="stat-subtext">Currently online</div>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon">📅</div>
+              <div class="stat-info">
+                <h3>New Today</h3>
+                <div id="new-users-today" class="stat-number">0</div>
+                <div class="stat-subtext">Registrations</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="users-tables">
+            <div class="table-card">
+              <h3>Currently Online Users</h3>
+              <div class="table-container">
+                <table id="online-users-table">
+                  <thead>
+                    <tr>
+                      <th>User ID</th>
+                      <th>Email</th>
+                      <th>Connection Time</th>
+                      <th>Duration</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="online-users-tbody">
+                    <!-- Filled by JavaScript -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="table-card">
+              <h3>Active Conversations</h3>
+              <div class="table-container">
+                <table id="active-conversations-table">
+                  <thead>
+                    <tr>
+                      <th>Pair ID</th>
+                      <th>User 1</th>
+                      <th>User 2</th>
+                      <th>Duration</th>
+                      <th>Messages</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="active-conversations-tbody">
+                    <!-- Filled by JavaScript -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Real-time Monitor Section -->
+        <section id="realtime-section" class="section">
+          <div class="section-header">
+            <h2>Real-time Monitor</h2>
+            <p>Live streaming of system activity and events</p>
+          </div>
+
+          <div class="realtime-grid">
+            <div class="realtime-card">
+              <h3>Live Event Stream</h3>
+              <div class="event-stream" id="event-stream">
+                <div class="stream-item">
+                  <span class="stream-time">12:00:00</span>
+                  <span class="stream-type info">INFO</span>
+                  <span class="stream-message"
+                    >System started successfully</span
+                  >
+                </div>
+              </div>
+            </div>
+
+            <div class="realtime-card">
+              <h3>Active Socket Connections</h3>
+              <div class="connections-list" id="connections-list">
+                <!-- Filled by JavaScript -->
+              </div>
+            </div>
+          </div>
+
+          <div class="live-metrics">
+            <h3>Live Performance Metrics</h3>
+            <div class="metrics-grid">
+              <div class="metric-item">
+                <span class="metric-label">Requests/sec</span>
+                <span id="requests-per-second" class="metric-value">0</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Messages/sec</span>
+                <span id="messages-per-second" class="metric-value">0</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Memory Usage</span>
+                <span id="live-memory" class="metric-value">0MB</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">CPU Load</span>
+                <span id="live-cpu" class="metric-value">0%</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Add more sections for Analytics, Database, System, Settings -->
+      </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="emergency-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>🚨 Emergency Controls</h3>
+          <span class="close" onclick="closeEmergencyModal()">&times;</span>
+        </div>
+        <div class="modal-body">
+          <div class="emergency-actions">
+            <button class="btn btn-danger large" onclick="emergencyShutdown()">
+              🔴 Emergency Shutdown
+            </button>
+            <button class="btn btn-warning large" onclick="restartServices()">
+              🟡 Restart All Services
+            </button>
+            <button class="btn btn-info large" onclick="clearAllCaches()">
+              🟢 Clear All Caches
+            </button>
+          </div>
+          <div class="emergency-notes">
+            <p>
+              <strong>Warning:</strong> These actions will affect all users
+              immediately.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="ip-block-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>🚫 Block IP Address</h3>
+          <span class="close" onclick="closeIPBlockModal()">&times;</span>
+        </div>
+        <div class="modal-body">
+          <form id="ip-block-form">
+            <div class="form-group">
+              <label for="ip-address">IP Address</label>
+              <input
+                type="text"
+                id="ip-address"
+                placeholder="e.g., 192.168.1.1"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label for="block-reason">Reason</label>
+              <textarea
+                id="block-reason"
+                placeholder="Reason for blocking..."
+                required
+              ></textarea>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-danger">Block IP</button>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                onclick="closeIPBlockModal()"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <script src="/js/admin-dashboard.js"></script>
+  </body>
+</html>

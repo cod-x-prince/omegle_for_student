@@ -1,4 +1,5 @@
-const logger = require("../../utils/logger"); // ✅ Correct path
+const logger = require("../../utils/logger");
+const healthMonitor = require("../../utils/healthMonitor"); // ✅ Add health monitor
 
 class PairingManager {
   constructor(io) {
@@ -23,6 +24,12 @@ class PairingManager {
         queueSize: this.waitingQueue.length,
         activePairs: this.activePairs.size / 2,
       });
+
+      // ✅ Track failed queue addition
+      healthMonitor.trackConnection("pairing", "queue_rejected", {
+        socketId: socket.id,
+        reason: "already_in_queue_or_paired",
+      });
       return false;
     }
 
@@ -41,6 +48,13 @@ class PairingManager {
       queueSize: this.waitingQueue.length,
       position: this.waitingQueue.length,
       totalUsers: this.userSockets.size,
+    });
+
+    // ✅ Track successful queue addition
+    healthMonitor.trackConnection("pairing", "joined_queue", {
+      socketId: socket.id,
+      queuePosition: this.waitingQueue.length,
+      queueSize: this.waitingQueue.length,
     });
 
     // Set pairing timeout (30 seconds)
@@ -113,6 +127,15 @@ class PairingManager {
         waitingQueue: this.waitingQueue.length,
       });
 
+      // ✅ Track successful pairing
+      healthMonitor.trackConnection("pairing", "success", {
+        user1: user1.socketId,
+        user2: user2.socketId,
+        user1Email: user1.userData.email,
+        user2Email: user2.userData.email,
+        waitingTime: Date.now() - user1.joinedAt,
+      });
+
       // Notify both users
       this.io.to(user1.socketId).emit("paired", {
         peerId: user2.socketId,
@@ -129,6 +152,20 @@ class PairingManager {
       logger.error("Error creating pair", {
         error: error.message,
         stack: error.stack,
+        user1: user1.socketId,
+        user2: user2.socketId,
+      });
+
+      // ✅ Track pairing failure
+      healthMonitor.trackConnection("pairing", "failure", {
+        error: error.message,
+        user1: user1.socketId,
+        user2: user2.socketId,
+      });
+
+      // ✅ Track the error
+      healthMonitor.trackError(error, {
+        context: "pairing_creation",
         user1: user1.socketId,
         user2: user2.socketId,
       });
@@ -153,6 +190,13 @@ class PairingManager {
       wasPaired: this.isUserPaired(socketId),
     });
 
+    // ✅ Track disconnection
+    healthMonitor.trackConnection("socket", "disconnect", {
+      socketId: socketId,
+      wasInQueue: this.isUserWaiting(socketId),
+      wasPaired: this.isUserPaired(socketId),
+    });
+
     this.removeFromQueue(socketId);
     this.clearPairingTimeout(socketId);
 
@@ -162,6 +206,13 @@ class PairingManager {
       logger.info("Notifying peer about disconnection", {
         disconnectedUser: socketId,
         peerId: peerId,
+      });
+
+      // ✅ Track pair disconnection
+      healthMonitor.trackConnection("pairing", "disconnected", {
+        socketId: socketId,
+        peerId: peerId,
+        reason: "user_disconnected",
       });
 
       this.io.to(peerId).emit("peer-disconnected", {
@@ -185,6 +236,13 @@ class PairingManager {
         logger.info("Adding disconnected peer back to queue", {
           peerId: peerId,
         });
+
+        // ✅ Track peer re-queueing
+        healthMonitor.trackConnection("pairing", "requeued", {
+          socketId: peerId,
+          reason: "partner_disconnected",
+        });
+
         const userData = peerSocket.userData;
         this.addToQueue(peerSocket, userData);
       }
@@ -258,6 +316,16 @@ class PairingManager {
     logger.info("Pairing timeout occurred", {
       socketId: socketId,
       wasInQueue: this.isUserWaiting(socketId),
+    });
+
+    // ✅ Track pairing timeout
+    healthMonitor.trackConnection("pairing", "timeout", {
+      socketId: socketId,
+      wasInQueue: this.isUserWaiting(socketId),
+      waitingTime: this.isUserWaiting(socketId)
+        ? Date.now() -
+          this.waitingQueue.find((user) => user.socketId === socketId)?.joinedAt
+        : null,
     });
 
     this.removeFromQueue(socketId);
