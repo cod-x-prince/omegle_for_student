@@ -4,10 +4,10 @@
   "description": "Secure video chat platform for college students",
   "main": "server/server.js",
   "scripts": {
-    "start": "node server/server.js",
-    "dev": "nodemon server/server.js",
-    "test": "jest",
-    "render-start": "node server/server.js"
+    "start": "cd server && node server.js",
+    "dev": "cd server && nodemon server.js",
+    "test": "cd server && jest",
+    "render-start": "cd server && node server.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.58.0",
