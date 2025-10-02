@@ -5,7 +5,7 @@ class EliteHealthMonitor {
   constructor() {
     this.startTime = Date.now();
     this.metrics = {
-      // Requests tracking
+      // [KEEP ALL YOUR EXISTING METRICS CODE]
       requests: {
         total: 0,
         successful: 0,
@@ -16,8 +16,6 @@ class EliteHealthMonitor {
         byHour: new Array(24).fill(0),
         responseTimes: [],
       },
-
-      // User & Connection tracking
       users: {
         totalRegistered: 0,
         activeNow: 0,
@@ -26,8 +24,6 @@ class EliteHealthMonitor {
         newUsersToday: 0,
         geographicDistribution: {},
       },
-
-      // Real-time connections
       connections: {
         total: 0,
         active: 0,
@@ -37,8 +33,6 @@ class EliteHealthMonitor {
         byCountry: {},
         connectionDurations: [],
       },
-
-      // Pairing system
       pairing: {
         totalPairs: 0,
         activePairs: 0,
@@ -48,8 +42,6 @@ class EliteHealthMonitor {
         queueSize: 0,
         pairingHistory: [],
       },
-
-      // Security monitoring
       security: {
         failedLogins: 0,
         blockedIPs: new Set(),
@@ -58,8 +50,6 @@ class EliteHealthMonitor {
         jwtRevocations: 0,
         securityEvents: [],
       },
-
-      // Performance metrics
       performance: {
         responseTimes: [],
         memoryUsage: [],
@@ -68,8 +58,6 @@ class EliteHealthMonitor {
         cacheHitRates: [],
         uptime: 0,
       },
-
-      // Business metrics
       business: {
         activeConversations: 0,
         messagesPerMinute: 0,
@@ -77,8 +65,6 @@ class EliteHealthMonitor {
         userRetention: 0,
         featureUsage: {},
       },
-
-      // Error tracking
       errors: {
         total: 0,
         byType: {},
@@ -97,7 +83,14 @@ class EliteHealthMonitor {
     this.setupRealTimeTracking();
     this.loadHistoricalData();
   }
-  // ✅ ADD MISSING ERROR TRACKING METHOD
+
+  // ✅ FIX: Add the missing method that PairingManager is calling
+  trackConnection(socketId, userData) {
+    // Alias for trackSocketConnection to maintain backward compatibility
+    return this.trackSocketConnection(socketId, userData);
+  }
+
+  // ✅ All the other methods we added earlier
   trackError(error, context = {}) {
     this.metrics.errors.total++;
 
@@ -113,18 +106,15 @@ class EliteHealthMonitor {
       context: context,
     });
 
-    // Keep only last 50 errors
     if (this.metrics.errors.recent.length > 50) {
       this.metrics.errors.recent.pop();
     }
 
-    // Update error rate
     const totalRequests = this.metrics.requests.total;
     this.metrics.errors.errorRate =
       totalRequests > 0 ? (this.metrics.errors.total / totalRequests) * 100 : 0;
   }
 
-  // ✅ ADD MISSING SYSTEM METRICS METHOD
   getSystemMetrics() {
     return {
       cpu: {
@@ -154,7 +144,6 @@ class EliteHealthMonitor {
     };
   }
 
-  // ✅ ADD MISSING ERROR METRICS METHOD
   getErrorMetrics() {
     return {
       total: this.metrics.errors.total,
@@ -164,7 +153,6 @@ class EliteHealthMonitor {
     };
   }
 
-  // ✅ ADD MISSING PAIRING TRACKING METHODS
   trackPairingStart(user1, user2) {
     const pairId = `${user1.userId}-${user2.userId}-${Date.now()}`;
     this.realTimeData.pairingSessions.set(pairId, {
@@ -178,7 +166,7 @@ class EliteHealthMonitor {
     this.metrics.pairing.activePairs++;
     this.updatePairingMetrics();
 
-    return pairId; // Return pairId for tracking
+    return pairId;
   }
 
   trackPairingEnd(pairId, success = true) {
@@ -209,11 +197,11 @@ class EliteHealthMonitor {
     if (pairSession) {
       pairSession.messages++;
       this.metrics.business.messagesPerMinute =
-        this.metrics.business.messagesPerMinute * 0.9 + 1 * 0.1; // Smooth average
+        this.metrics.business.messagesPerMinute * 0.9 + 1 * 0.1;
     }
   }
 
-  // Real user tracking methods
+  // [KEEP ALL YOUR ORIGINAL METHODS]
   trackUserLogin(userId, userData) {
     this.metrics.users.sessionsToday++;
     this.realTimeData.userSessions.set(userId, {
@@ -242,7 +230,6 @@ class EliteHealthMonitor {
       ipAddress: userData.ip,
     });
 
-    // Update user session with socket
     if (
       userData.userId &&
       this.realTimeData.userSessions.has(userData.userId)
@@ -261,7 +248,6 @@ class EliteHealthMonitor {
       const duration = Date.now() - socketData.connectTime;
       this.metrics.connections.connectionDurations.push(duration);
 
-      // Update user session
       if (
         socketData.userId &&
         this.realTimeData.userSessions.has(socketData.userId)
@@ -284,54 +270,6 @@ class EliteHealthMonitor {
     this.metrics.connections.socketDisconnections++;
   }
 
-  // Pairing system tracking
-  trackPairingStart(user1, user2) {
-    const pairId = `${user1.userId}-${user2.userId}-${Date.now()}`;
-    this.realTimeData.pairingSessions.set(pairId, {
-      user1,
-      user2,
-      startTime: Date.now(),
-      messages: 0,
-      active: true,
-    });
-
-    this.metrics.pairing.activePairs++;
-    this.updatePairingMetrics();
-  }
-
-  trackPairingEnd(pairId, success = true) {
-    const pairSession = this.realTimeData.pairingSessions.get(pairId);
-    if (pairSession) {
-      const duration = Date.now() - pairSession.startTime;
-
-      if (success) {
-        this.metrics.pairing.totalPairs++;
-        this.metrics.pairing.pairingHistory.push({
-          duration,
-          users: [pairSession.user1.userId, pairSession.user2.userId],
-          messages: pairSession.messages,
-          timestamp: Date.now(),
-        });
-      } else {
-        this.metrics.pairing.failedPairs++;
-      }
-
-      pairSession.active = false;
-      this.metrics.pairing.activePairs--;
-    }
-    this.updatePairingMetrics();
-  }
-
-  trackMessage(pairId) {
-    const pairSession = this.realTimeData.pairingSessions.get(pairId);
-    if (pairSession) {
-      pairSession.messages++;
-      this.metrics.business.messagesPerMinute =
-        this.metrics.business.messagesPerMinute * 0.9 + 1 * 0.1; // Smooth average
-    }
-  }
-
-  // Security monitoring
   trackSecurityEvent(type, details) {
     const event = {
       id: this.generateId(),
@@ -346,12 +284,10 @@ class EliteHealthMonitor {
     this.metrics.security.securityEvents.unshift(event);
     this.metrics.security.suspiciousActivities++;
 
-    // Keep only last 100 events
     if (this.metrics.security.securityEvents.length > 100) {
       this.metrics.security.securityEvents.pop();
     }
 
-    // Auto-block suspicious IPs
     if (details.ip && details.severity === "high") {
       this.metrics.security.blockedIPs.add(details.ip);
     }
@@ -366,13 +302,11 @@ class EliteHealthMonitor {
       severity: "medium",
     });
 
-    // Rate limiting for failed logins
     const key = `failed_login:${ip}`;
     const count = this.realTimeData.rateLimitTracker.get(key) || 0;
     this.realTimeData.rateLimitTracker.set(key, count + 1);
 
     if (count > 5) {
-      // More than 5 failed attempts
       this.trackSecurityEvent("suspicious_activity", {
         ip,
         reason: "Multiple failed login attempts",
@@ -381,7 +315,6 @@ class EliteHealthMonitor {
     }
   }
 
-  // Performance tracking
   trackResponseTime(endpoint, method, statusCode, responseTime) {
     this.metrics.requests.total++;
 
@@ -391,30 +324,24 @@ class EliteHealthMonitor {
       this.metrics.requests.failed++;
     }
 
-    // Track by endpoint
     this.metrics.requests.byEndpoint[endpoint] =
       (this.metrics.requests.byEndpoint[endpoint] || 0) + 1;
 
-    // Track by method
     this.metrics.requests.byMethod[method] =
       (this.metrics.requests.byMethod[method] || 0) + 1;
 
-    // Track by status code
     this.metrics.requests.byStatusCode[statusCode] =
       (this.metrics.requests.byStatusCode[statusCode] || 0) + 1;
 
-    // Track response times
     this.metrics.requests.responseTimes.push(responseTime);
     if (this.metrics.requests.responseTimes.length > 1000) {
       this.metrics.requests.responseTimes.shift();
     }
 
-    // Track hourly distribution
     const hour = new Date().getHours();
     this.metrics.requests.byHour[hour]++;
   }
 
-  // Real-time data methods
   updateActiveUsers() {
     this.metrics.users.activeNow = this.realTimeData.userSessions.size;
     this.metrics.users.onlineNow = Array.from(
@@ -441,17 +368,14 @@ class EliteHealthMonitor {
       this.metrics.pairing.activePairs;
   }
 
-  // Data aggregation methods
   getRealTimeMetrics() {
     const now = Date.now();
     const oneHourAgo = now - 60 * 60 * 1000;
 
-    // Calculate active pairs in last hour
     const recentPairs = Array.from(
       this.realTimeData.pairingSessions.values()
     ).filter((session) => session.startTime > oneHourAgo && session.active);
 
-    // Calculate error rate
     const totalRequests = this.metrics.requests.total;
     const failedRequests = this.metrics.requests.failed;
     this.metrics.errors.errorRate =
@@ -550,7 +474,6 @@ class EliteHealthMonitor {
     };
   }
 
-  // Utility methods
   calculatePercentile(arr, percentile) {
     if (arr.length === 0) return 0;
     const sorted = [...arr].sort((a, b) => a - b);
@@ -584,13 +507,11 @@ class EliteHealthMonitor {
   }
 
   setupRealTimeTracking() {
-    // Update metrics every second
     setInterval(() => {
       this.updateActiveUsers();
       this.updatePairingMetrics();
     }, 1000);
 
-    // Clean up old data every hour
     setInterval(() => {
       this.cleanupOldData();
     }, 60 * 60 * 1000);
@@ -599,7 +520,6 @@ class EliteHealthMonitor {
   cleanupOldData() {
     const oneHourAgo = Date.now() - 60 * 60 * 1000;
 
-    // Clean up old pairing sessions
     for (const [
       pairId,
       session,
@@ -609,7 +529,6 @@ class EliteHealthMonitor {
       }
     }
 
-    // Clean up rate limit tracker
     for (const [
       key,
       timestamp,
@@ -621,7 +540,6 @@ class EliteHealthMonitor {
   }
 
   async loadHistoricalData() {
-    // Load initial user count from database
     try {
       const supabase = createClient(
         process.env.SUPABASE_URL,
@@ -640,7 +558,6 @@ class EliteHealthMonitor {
     }
   }
 
-  // Admin actions
   blockIP(ip, reason = "Manual block") {
     this.metrics.security.blockedIPs.add(ip);
     this.trackSecurityEvent("ip_blocked", { ip, reason, severity: "high" });
@@ -651,7 +568,6 @@ class EliteHealthMonitor {
   }
 
   resetMetrics() {
-    // Reset counters but keep real-time data
     this.metrics.requests.total = 0;
     this.metrics.requests.successful = 0;
     this.metrics.requests.failed = 0;
