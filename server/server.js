@@ -553,12 +553,18 @@ class CampusConnectServer {
 
   async autoOpenBrowser(port) {
     try {
+      // Don't auto-open in production environments
+      if (process.env.NODE_ENV === "production" || process.env.RENDER) {
+        logger.info("Auto-open browser disabled in production");
+        return;
+      }
+
       const open = await import("open");
       const url = `http://localhost:${port}`;
       await open.default(url);
       logger.info("Browser auto-opened", { url: url });
     } catch (error) {
-      logger.warn("Could not auto-open browser", { error: error.message });
+      logger.warning("Could not auto-open browser", { error: error.message });
     }
   }
 
