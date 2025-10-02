@@ -58,3 +58,12 @@
 {"email":"parmbeer.aiml24@cmrit.ac.in","environment":"production","level":"info","message":"User added to pairing queue","position":1,"queueSize":1,"service":"campusconnect-server","socketId":"8XttDtA2xgNNxCOaAAAB","timestamp":"2025-10-02 14:00:21.772","totalUsers":1}
 {"email":"parmbeer.aiml24@cmrit.ac.in","environment":"production","level":"info","message":"Socket disconnected","reason":"client namespace disconnect","service":"campusconnect-server","socketId":"8XttDtA2xgNNxCOaAAAB","timestamp":"2025-10-02 14:00:25.791"}
 {"environment":"production","level":"info","message":"Received SIGINT, shutting down gracefully...","service":"campusconnect-server","timestamp":"2025-10-02 14:16:07.827"}
+{"environment":"production","hasJwtSecret":true,"level":"info","message":"AuthMiddleware initialized","service":"campusconnect-server","timestamp":"2025-10-02 14:16:12.732"}
+{"environment":"production","initialPairs":0,"initialQueueSize":0,"level":"info","message":"PairingManager initialized","service":"campusconnect-server","timestamp":"2025-10-02 14:16:12.738"}
+{"environment":"production","level":"info","message":"SignalingHandler initialized","rateLimitMax":50,"rateLimitWindow":60000,"service":"campusconnect-server","timestamp":"2025-10-02 14:16:12.739"}
+{"environment":"production","level":"info","message":"Proxy configuration","nodeEnv":"production","service":"campusconnect-server","timestamp":"2025-10-02 14:16:12.739","trustProxy":1}
+{"environment":"production","level":"info","message":"Middleware setup completed","service":"campusconnect-server","timestamp":"2025-10-02 14:16:12.741"}
+{"environment":"production","level":"info","message":"Routes setup completed","service":"campusconnect-server","timestamp":"2025-10-02 14:16:12.742"}
+{"environment":"production","level":"info","message":"Socket.IO setup completed","service":"campusconnect-server","timestamp":"2025-10-02 14:16:12.742"}
+{"environment":"production","level":"info","message":"CampusConnectServer instance created","pid":15828,"service":"campusconnect-server","timestamp":"2025-10-02 14:16:12.743"}
+{"environment":"production","host":"0.0.0.0","level":"info","message":"CampusConnect server started successfully","nodeVersion":"v22.18.0","pid":15828,"port":"3000","service":"campusconnect-server","timestamp":"2025-10-02 14:16:12.753"}
