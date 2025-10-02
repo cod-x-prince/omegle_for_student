@@ -62,12 +62,28 @@ module.exports = {
     legacyHeaders: false,
   }),
 
-  // CORS configuration
+  // CORS configuration - FIXED
   corsConfig: {
-    origin: process.env.ALLOWED_ORIGINS
-      ? process.env.ALLOWED_ORIGINS.split(",")
-      : ["http://localhost:3000"],
-    methods: ["GET", "POST"],
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+
+      const allowedOrigins = process.env.ALLOWED_ORIGINS
+        ? process.env.ALLOWED_ORIGINS.split(",")
+        : [
+            "http://localhost:3000",
+            "https://pu-c.onrender.com",
+            "http://localhost:3001",
+            "http://127.0.0.1:3000",
+          ];
+
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   },
 };

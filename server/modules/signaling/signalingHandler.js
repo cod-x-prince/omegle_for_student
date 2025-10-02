@@ -1,10 +1,12 @@
-const logger = require("../../utils/logger");
+const logger = require("../../utils/logger"); // ✅ Correct path
 
 class SignalingHandler {
-  constructor() {
+  constructor(io, pairingManager) {
+    this.io = io;
+    this.pairingManager = pairingManager;
     this.messageCounts = new Map();
-    this.rateLimitWindow = 60000; // 1 minute
-    this.rateLimitMax = 50; // Max 50 messages per minute
+    this.rateLimitWindow = 60000;
+    this.rateLimitMax = 50;
 
     logger.info("SignalingHandler initialized", {
       rateLimitWindow: this.rateLimitWindow,
@@ -50,9 +52,8 @@ class SignalingHandler {
         return;
       }
 
-      // Check if users are paired
-      const pairingManager = require("../pairing/pairingManager");
-      const peerId = pairingManager.activePairs.get(socket.id);
+      // Check if users are paired using the pairingManager instance
+      const peerId = this.pairingManager.activePairs.get(socket.id);
 
       if (!peerId) {
         logger.warn("Signaling attempt without active pair", {
@@ -82,7 +83,7 @@ class SignalingHandler {
       }
 
       // Check if peer is still connected
-      const peerSocket = this.getSocketById(peerId);
+      const peerSocket = this.io.sockets.sockets.get(peerId);
       if (!peerSocket || !peerSocket.connected) {
         logger.warn("Signaling to disconnected peer", {
           socketId: socket.id,
@@ -96,8 +97,7 @@ class SignalingHandler {
       }
 
       // Forward signal to peer
-      const io = require("../server").io;
-      io.to(peerId).emit("signal", {
+      this.io.to(peerId).emit("signal", {
         from: socket.id,
         signal: data.signal,
         type: data.type || "webrtc",
@@ -221,19 +221,6 @@ class SignalingHandler {
     return true;
   }
 
-  getSocketById(socketId) {
-    try {
-      const io = require("../server").io;
-      return io.sockets.sockets.get(socketId);
-    } catch (error) {
-      logger.error("Error getting socket by ID", {
-        socketId: socketId,
-        error: error.message,
-      });
-      return null;
-    }
-  }
-
   cleanup(socketId) {
     const messageCount = this.messageCounts.get(socketId)?.length || 0;
     this.messageCounts.delete(socketId);
@@ -291,4 +278,4 @@ class SignalingHandler {
   }
 }
 
-module.exports = new SignalingHandler();
+module.exports = SignalingHandler; // Export class, not instance

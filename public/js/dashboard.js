@@ -159,10 +159,19 @@ class DashboardController {
         reconnection: true,
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
+        timeout: 10000, // Add timeout
       });
 
       this.setupSocketEvents();
       this.socketInitialized = true;
+
+      // Add connection timeout
+      setTimeout(() => {
+        if (this.socket && !this.socket.connected) {
+          this.logger.error("DashboardController: Socket connection timeout");
+          this.showError("Connection timeout. Please refresh the page.");
+        }
+      }, 10000);
     } catch (error) {
       this.logger.error(
         "DashboardController: Socket initialization failed",

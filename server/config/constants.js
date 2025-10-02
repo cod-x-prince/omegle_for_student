@@ -1,5 +1,7 @@
 // Application constants
 module.exports = {
+  RATE_LIMIT_WINDOW_MS: 15 * 60 * 1000, // 15 minutes
+  RATE_LIMIT_MAX_REQUESTS: 100,
   // Email domains
   ALLOWED_DOMAINS: [".edu", "@cmrit.ac.in"],
 

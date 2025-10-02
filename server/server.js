@@ -1,25 +1,58 @@
 require("dotenv").config();
+//---------------------------------
+console.log("🚀 Starting server...");
+console.log("Environment:", process.env.NODE_ENV);
+console.log("Supabase URL configured:", !!process.env.SUPABASE_URL);
+console.log("JWT Secret configured:", !!process.env.JWT_SECRET);
+
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const path = require("path");
 
-// Import configurations
-const securityConfig = require("./config/security");
-const constants = require("./config/constants");
+console.log("✅ Core modules loaded");
+
+// Import configurations - FIXED PATHS
+let securityConfig, constants;
+
+try {
+  securityConfig = require("./config/security");
+  console.log("✅ Security config loaded");
+} catch (e) {
+  console.error("❌ Security config failed:", e.message);
+  process.exit(1);
+}
+
+try {
+  constants = require("./config/constants");
+  console.log("✅ Constants loaded");
+} catch (e) {
+  console.error("❌ Constants failed:", e.message);
+  process.exit(1);
+}
+//---------------------------------
+
 // Database (SUPABASE) Setup
 const helmet = require("helmet");
 const { createClient } = require("@supabase/supabase-js");
 
+// Enhanced Supabase client with better error handling
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
+  process.env.SUPABASE_ANON_KEY,
+  {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: false,
+      detectSessionInUrl: false,
+    },
+  }
 );
 
-// Import modules
+// Import modules - CORRECT PATHS:
 const authMiddleware = require("./modules/auth/authMiddleware");
 const PairingManager = require("./modules/pairing/pairingManager");
-const signalingHandler = require("./modules/signaling/signalingHandler");
+const SignalingHandler = require("./modules/signaling/signalingHandler");
 const logger = require("./utils/logger");
 
 class CampusConnectServer {
@@ -30,7 +63,10 @@ class CampusConnectServer {
       cors: securityConfig.corsConfig,
     });
 
+    // Initialize modules with proper dependency injection
     this.pairingManager = new PairingManager(this.io);
+    this.signalingHandler = new SignalingHandler(this.io, this.pairingManager);
+
     this.setupMiddleware();
     this.setupRoutes();
     this.setupSocketIO();
@@ -44,7 +80,7 @@ class CampusConnectServer {
   setupMiddleware() {
     logger.debug("Setting up middleware");
 
-    // Trust proxy configuration
+    // Trust proxy configuration for Render
     this.app.set("trust proxy", 1);
     logger.info("Proxy configuration", {
       trustProxy: this.app.get("trust proxy"),
@@ -55,7 +91,7 @@ class CampusConnectServer {
     this.app.use(securityConfig.helmetConfig);
     this.app.use(securityConfig.rateLimitConfig);
 
-    // Static files
+    // Static files - FIXED PATH
     this.app.use(express.static(path.join(__dirname, "../public")));
 
     // Body parsing with limits
@@ -79,23 +115,18 @@ class CampusConnectServer {
   setupRoutes() {
     logger.debug("Setting up routes");
 
-    // API route for signup
+    // API route for signup - IMPROVED VERSION
     this.app.post("/api/auth/signup", async (req, res) => {
       try {
         const { email, password, firstName, lastName, college, major } =
           req.body;
 
-        logger.info("Signup attempt", {
-          email: email,
-          ip: req.ip,
-          userAgent: req.get("User-Agent"),
-        });
+        logger.info("Signup attempt", { email: email });
 
         // Validate required fields
-        if (!email || !password) {
-          logger.warn("Signup missing required fields", { email: email });
+        if (!email || !password || !firstName || !lastName) {
           return res.status(400).json({
-            error: "Email and password are required",
+            error: "Email, password, first name and last name are required",
           });
         }
 
@@ -106,51 +137,118 @@ class CampusConnectServer {
         );
 
         if (!isValidEmail) {
-          logger.warn("Invalid email domain attempted", { email: email });
           return res.status(400).json({
             error:
               "Please use a valid college email address (.edu or @cmrit.ac.in)",
           });
         }
 
-        // Validate password
         if (password.length < 6) {
-          logger.warn("Password too short", { email: email });
           return res.status(400).json({
             error: "Password must be at least 6 characters long",
           });
         }
 
-        const { data, error } = await supabase.auth.signUp({
-          email: email,
-          password: password,
-          options: {
-            data: {
-              first_name: firstName,
-              last_name: lastName,
+        // Create user with Supabase Auth
+        const { data: authData, error: authError } = await supabase.auth.signUp(
+          {
+            email: email,
+            password: password,
+            options: {
+              data: {
+                first_name: firstName,
+                last_name: lastName,
+                college: college || "",
+                major: major || "",
+              },
+            },
+          }
+        );
+
+        if (authError) {
+          logger.error("Signup Supabase auth error", {
+            error: authError.message,
+            email: email,
+          });
+
+          let errorMessage = "Signup failed";
+          if (
+            authError.message.includes("already registered") ||
+            authError.message.includes("user_exists")
+          ) {
+            errorMessage = "User already exists with this email";
+          } else if (authError.message.includes("password")) {
+            errorMessage = "Password does not meet requirements";
+          } else if (authError.message.includes("email")) {
+            errorMessage = "Invalid email format";
+          }
+
+          return res.status(400).json({ error: errorMessage });
+        }
+
+        // If user created successfully but email not confirmed
+        if (authData.user && !authData.user.email_confirmed_at) {
+          logger.info("User created but email not confirmed", {
+            userId: authData.user.id,
+          });
+
+          // Generate JWT token for immediate login (optional)
+          const jwt = require("jsonwebtoken");
+          const token = jwt.sign(
+            {
+              userId: authData.user.id,
+              email: authData.user.email,
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: "24h" }
+          );
+
+          return res.status(200).json({
+            message:
+              "Signup successful! Please check your email for verification.",
+            token: token,
+            user: {
+              id: authData.user.id,
+              email: authData.user.email,
+              firstName: firstName,
+              lastName: lastName,
               college: college,
               major: major,
             },
-          },
-        });
-
-        if (error) {
-          logger.error("Signup Supabase error", {
-            error: error.message,
-            email: email,
-            status: error.status,
+            requiresVerification: true,
           });
-          return res.status(400).json({ error: error.message });
         }
 
-        logger.info("User signed up successfully", {
-          email: email,
-          userId: data.user?.id,
-        });
+        // If user exists and is confirmed
+        if (authData.user && authData.user.email_confirmed_at) {
+          const jwt = require("jsonwebtoken");
+          const token = jwt.sign(
+            {
+              userId: authData.user.id,
+              email: authData.user.email,
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: "24h" }
+          );
 
+          return res.status(200).json({
+            message: "Signup successful!",
+            token: token,
+            user: {
+              id: authData.user.id,
+              email: authData.user.email,
+              firstName: firstName,
+              lastName: lastName,
+              college: college,
+              major: major,
+            },
+          });
+        }
+
+        // Fallback response
         res.status(200).json({
-          message: "Signup successful! Check your email for verification.",
-          user: data.user,
+          message:
+            "Signup request received. Please check your email for verification.",
         });
       } catch (error) {
         logger.error("Signup route unexpected error", {
@@ -161,18 +259,14 @@ class CampusConnectServer {
       }
     });
 
-    // API route for login
+    // API route for login - IMPROVED VERSION
     this.app.post("/api/auth/login", async (req, res) => {
       try {
         const { email, password } = req.body;
 
-        logger.info("Login attempt", {
-          email: email,
-          ip: req.ip,
-        });
+        logger.info("Login attempt", { email: email });
 
         if (!email || !password) {
-          logger.warn("Login missing credentials", { email: email });
           return res
             .status(400)
             .json({ error: "Email and password are required" });
@@ -187,9 +281,16 @@ class CampusConnectServer {
           logger.error("Login Supabase error", {
             error: error.message,
             email: email,
-            status: error.status,
           });
-          return res.status(401).json({ error: "Invalid credentials" });
+
+          let errorMessage = "Invalid credentials";
+          if (error.message.includes("Email not confirmed")) {
+            errorMessage = "Please verify your email before logging in";
+          } else if (error.message.includes("Invalid login credentials")) {
+            errorMessage = "Invalid email or password";
+          }
+
+          return res.status(401).json({ error: errorMessage });
         }
 
         const jwt = require("jsonwebtoken");
@@ -199,7 +300,7 @@ class CampusConnectServer {
             email: data.user.email,
           },
           process.env.JWT_SECRET,
-          { expiresIn: "1h" }
+          { expiresIn: "24h" } // Extended for better UX
         );
 
         logger.info("User logged in successfully", {
@@ -209,7 +310,7 @@ class CampusConnectServer {
 
         res.status(200).json({
           message: "Login successful",
-          token,
+          token: token,
           user: {
             id: data.user.id,
             email: data.user.email,
@@ -226,11 +327,22 @@ class CampusConnectServer {
 
     // Health check endpoint
     this.app.get("/health", (req, res) => {
-      logger.debug("Health check requested", { ip: req.ip });
       res.json({
         status: "OK",
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
+        environment: process.env.NODE_ENV || "development",
+      });
+    });
+
+    // Deployment test endpoint
+    this.app.get("/api/deploy-test", (req, res) => {
+      res.json({
+        status: "OK",
+        message: "Deployment successful",
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV,
+        supabase: process.env.SUPABASE_URL ? "configured" : "missing",
       });
     });
 
@@ -246,13 +358,11 @@ class CampusConnectServer {
         pairing: this.pairingManager.getQueueStatus(),
         environment: process.env.NODE_ENV || "development",
       };
-      logger.debug("Server info requested", { ip: req.ip });
       res.json(info);
     });
 
     // Config endpoint
     this.app.get("/api/config", (req, res) => {
-      logger.debug("Config requested", { ip: req.ip });
       res.json({
         supabaseUrl: process.env.SUPABASE_URL ? "configured" : "missing",
         supabaseKey: process.env.SUPABASE_ANON_KEY ? "configured" : "missing",
@@ -260,34 +370,37 @@ class CampusConnectServer {
       });
     });
 
+    // Serve HTML files explicitly - FIXED ROUTING
+    const htmlFiles = ["/", "/login", "/signup", "/dashboard", "/chat"];
+    htmlFiles.forEach((route) => {
+      this.app.get(route, (req, res) => {
+        let file = "index.html";
+        if (route === "/login") file = "login.html";
+        else if (route === "/signup") file = "signup.html";
+        else if (route === "/dashboard") file = "dashboard.html";
+        else if (route === "/chat") file = "chat.html";
+
+        res.sendFile(path.join(__dirname, "../public", file));
+      });
+    });
+
+    // Serve HTML files with .html extension
+    this.app.get("*.html", (req, res) => {
+      res.sendFile(path.join(__dirname, "../public", req.path));
+    });
+
     // 404 handler for API routes
     this.app.use("/api/*", (req, res) => {
       logger.warn("404 Not Found for API route", {
         url: req.originalUrl,
         method: req.method,
-        ip: req.ip,
       });
       res.status(404).json({ error: "API endpoint not found" });
     });
 
-    // Serve main application for SPA routing
+    // SPA fallback - must be LAST
     this.app.get("*", (req, res) => {
-      if (
-        !req.path.startsWith("/api/") &&
-        ![
-          "/chat.html",
-          "/login.html",
-          "/signup.html",
-          "/dashboard.html",
-        ].includes(req.path)
-      ) {
-        res.sendFile(path.join(__dirname, "../public/index.html"));
-      }
-    });
-
-    // In setupRoutes() method, add:
-    this.app.get("/dashboard.html", (req, res) => {
-      res.sendFile(path.join(__dirname, "../public/dashboard.html"));
+      res.sendFile(path.join(__dirname, "../public/index.html"));
     });
 
     // Final Express error handler
@@ -298,6 +411,12 @@ class CampusConnectServer {
         url: req.url,
         method: req.method,
       });
+
+      // Handle CORS errors
+      if (err.message.includes("CORS")) {
+        return res.status(403).json({ error: "CORS policy violation" });
+      }
+
       if (res.headersSent) {
         return next(err);
       }
@@ -318,10 +437,6 @@ class CampusConnectServer {
       logger.info("New socket connection established", {
         socketId: socket.id,
         email: socket.userData.email,
-        handshake: {
-          address: socket.handshake.address,
-          headers: socket.handshake.headers,
-        },
       });
 
       // Add to pairing queue
@@ -348,7 +463,6 @@ class CampusConnectServer {
         logger.error("Error adding user to queue", {
           socketId: socket.id,
           error: error.message,
-          stack: error.stack,
         });
         socket.emit("error", { message: "Failed to join queue" });
         return;
@@ -361,12 +475,11 @@ class CampusConnectServer {
           to: data.to,
           type: data.signal?.type,
         });
-        signalingHandler.handleSignal(socket, data);
+        this.signalingHandler.handleSignal(socket, data);
       });
 
       // Handle custom events
       socket.on("ping", (data) => {
-        logger.debug("Ping received", { socketId: socket.id });
         socket.emit("pong", { timestamp: Date.now(), ...data });
       });
 
@@ -379,7 +492,7 @@ class CampusConnectServer {
         });
 
         this.pairingManager.handleDisconnect(socket.id);
-        signalingHandler.cleanup(socket.id);
+        this.signalingHandler.cleanup(socket.id);
       });
 
       // Error handling
@@ -387,7 +500,6 @@ class CampusConnectServer {
         logger.error("Socket error", {
           socketId: socket.id,
           error: error.message,
-          stack: error.stack,
         });
       });
 
@@ -407,7 +519,6 @@ class CampusConnectServer {
       logger.error("Socket.IO engine connection error", {
         error: err.message,
         code: err.code,
-        context: err.context,
       });
     });
 
@@ -417,17 +528,19 @@ class CampusConnectServer {
   start() {
     const port = process.env.PORT || 3000;
 
-    this.server.listen(port, () => {
+    // Render-specific: Listen on 0.0.0.0
+    this.server.listen(port, "0.0.0.0", () => {
       logger.info("CampusConnect server started successfully", {
         environment: process.env.NODE_ENV || "development",
         port: port,
         pid: process.pid,
         nodeVersion: process.version,
+        host: "0.0.0.0",
       });
 
-      // Auto-open browser in development mode
+      // Only auto-open in development
       if (
-        process.env.NODE_ENV !== "production" &&
+        process.env.NODE_ENV === "development" &&
         process.env.AUTO_OPEN !== "false"
       ) {
         this.autoOpenBrowser(port);
@@ -442,49 +555,16 @@ class CampusConnectServer {
     try {
       const open = await import("open");
       const url = `http://localhost:${port}`;
-
       await open.default(url);
-      logger.info("Browser auto-opened successfully", {
-        url: url,
-        platform: process.platform,
-      });
+      logger.info("Browser auto-opened", { url: url });
     } catch (error) {
-      logger.warn("Could not auto-open browser", {
-        error: error.message,
-        suggestion: "Please install the 'open' package: npm install open",
-      });
-
-      this.fallbackOpenBrowser(port);
-    }
-  }
-
-  fallbackOpenBrowser(port) {
-    try {
-      const { exec } = require("child_process");
-      const url = `http://localhost:${port}`;
-
-      if (process.platform === "win32") {
-        exec(`start ${url}`);
-      } else if (process.platform === "darwin") {
-        exec(`open ${url}`);
-      } else {
-        exec(`xdg-open ${url}`);
-      }
-
-      logger.info("Browser opened using fallback method", { url: url });
-    } catch (error) {
-      logger.info("Please open browser manually", {
-        url: `http://localhost:${port}`,
-      });
+      logger.warn("Could not auto-open browser", { error: error.message });
     }
   }
 
   setupGracefulShutdown() {
     const shutdown = (signal) => {
-      logger.info(`Received ${signal}, shutting down gracefully...`, {
-        activeConnections: this.io.engine.clientsCount,
-        activePairs: this.pairingManager.activePairs.size / 2,
-      });
+      logger.info(`Received ${signal}, shutting down gracefully...`);
 
       // Close Socket.IO
       this.io.close(() => {
@@ -506,25 +586,17 @@ class CampusConnectServer {
 
     process.on("SIGTERM", () => shutdown("SIGTERM"));
     process.on("SIGINT", () => shutdown("SIGINT"));
-
-    logger.debug("Graceful shutdown handlers registered");
   }
 }
 
-// Handle uncaught exceptions at the top level
+// Handle uncaught exceptions
 process.on("uncaughtException", (error) => {
-  logger.error("TOP LEVEL - Uncaught Exception", {
-    error: error.message,
-    stack: error.stack,
-  });
+  console.error("Uncaught Exception:", error);
   process.exit(1);
 });
 
 process.on("unhandledRejection", (reason, promise) => {
-  logger.error("TOP LEVEL - Unhandled Promise Rejection", {
-    reason: reason instanceof Error ? reason.message : reason,
-    promise: promise,
-  });
+  console.error("Unhandled Promise Rejection:", reason);
   process.exit(1);
 });
 
@@ -532,13 +604,8 @@ process.on("unhandledRejection", (reason, promise) => {
 try {
   const server = new CampusConnectServer();
   server.start();
-
-  // Export for testing
   module.exports = server;
 } catch (error) {
-  logger.error("Failed to start server", {
-    error: error.message,
-    stack: error.stack,
-  });
+  console.error("Failed to start server:", error);
   process.exit(1);
 }

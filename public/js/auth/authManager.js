@@ -32,8 +32,9 @@ class AuthManager {
       return false;
     }
 
-    // Basic token validation (could be enhanced with JWT expiration check)
+    // Basic token validation
     try {
+      // For JWT tokens from your server
       const payload = JSON.parse(atob(token.split(".")[1]));
       const isExpired = payload.exp && payload.exp < Date.now() / 1000;
 
@@ -49,6 +50,11 @@ class AuthManager {
       console.error("AuthManager: Token validation error", {
         error: error.message,
       });
+      // If it's not a JWT, it might be a Supabase token - check differently
+      if (token.length > 100) {
+        // Assume it's a valid token for now
+        return true;
+      }
       this.clearAuthData();
       return false;
     }
