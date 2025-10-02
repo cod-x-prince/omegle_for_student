@@ -48,7 +48,6 @@ try {
   console.error("❌ Constants failed:", e.message);
   process.exit(1);
 }
-//---------------------------------
 
 // Database (SUPABASE) Setup
 const helmet = require("helmet");
@@ -79,11 +78,24 @@ class CampusConnectServer {
   constructor() {
     this.app = express();
     this.server = http.createServer(this.app);
+
+    // ✅ FIXED: Enhanced Socket.IO configuration for Render.com
     this.io = new Server(this.server, {
-      cors: securityConfig.corsConfig,
+      cors: {
+        origin: [
+          "https://pu-c.onrender.com",
+          "http://localhost:3000",
+          "http://127.0.0.1:3000",
+        ],
+        methods: ["GET", "POST"],
+        credentials: true,
+      },
+      transports: ["websocket", "polling"], // Explicit transports
+      pingTimeout: 60000,
+      pingInterval: 25000,
     });
 
-    // Initialize health monitor - UPDATED to use EliteHealthMonitor
+    // Initialize health monitor
     this.healthMonitor = require("./utils/healthMonitor");
 
     // Initialize modules with proper dependency injection
@@ -121,13 +133,23 @@ class CampusConnectServer {
     this.app.use(express.json({ limit: "10kb" }));
     this.app.use(express.urlencoded({ extended: true, limit: "10kb" }));
 
-    // Request logging middleware - UPDATED to track real data
+    // Request logging middleware
     this.app.use((req, res, next) => {
       const start = Date.now();
 
       res.on("finish", () => {
         const responseTime = Date.now() - start;
         const success = res.statusCode < 400;
+
+        // ✅ FIXED: Now trackError exists in healthMonitor
+        if (!success) {
+          this.healthMonitor.trackError(new Error(`HTTP ${res.statusCode}`), {
+            route: req.path,
+            method: req.method,
+            statusCode: res.statusCode,
+          });
+        }
+
         this.healthMonitor.trackResponseTime(
           req.path,
           req.method,
@@ -788,7 +810,7 @@ class CampusConnectServer {
     // Authentication middleware
     this.io.use(authMiddleware.authenticateToken);
 
-    // Connection handling - UPDATED with real tracking
+    // Connection handling
     this.io.on("connection", (socket) => {
       logger.info("New socket connection established", {
         socketId: socket.id,
@@ -831,6 +853,13 @@ class CampusConnectServer {
           socketId: socket.id,
           error: error.message,
         });
+
+        // ✅ FIXED: trackError now exists
+        this.healthMonitor.trackError(error, {
+          socketId: socket.id,
+          action: "add_to_queue",
+        });
+
         socket.emit("error", { message: "Failed to join queue" });
         return;
       }
@@ -845,20 +874,23 @@ class CampusConnectServer {
         this.signalingHandler.handleSignal(socket, data);
       });
 
-      // Track pairing events - NEW
+      // Track pairing events - ✅ NOW WORKING
       socket.on("user_paired", (data) => {
-        this.healthMonitor.trackPairingStart(
+        const pairId = this.healthMonitor.trackPairingStart(
           { userId: socket.userData.userId, email: socket.userData.email },
           { userId: data.pairedWith.id, email: data.pairedWith.email }
         );
+
+        // Store pairId in socket for later reference
+        socket.pairId = pairId;
       });
 
       socket.on("user_unpaired", (data) => {
-        this.healthMonitor.trackPairingEnd(data.pairId, data.success);
+        this.healthMonitor.trackPairingEnd(socket.pairId, data.success);
       });
 
       socket.on("message", (data) => {
-        this.healthMonitor.trackMessage(data.pairId);
+        this.healthMonitor.trackMessage(socket.pairId);
       });
 
       // Handle custom events
@@ -866,7 +898,7 @@ class CampusConnectServer {
         socket.emit("pong", { timestamp: Date.now(), ...data });
       });
 
-      // Disconnection handling - UPDATED
+      // Disconnection handling
       socket.on("disconnect", (reason) => {
         logger.info("Socket disconnected", {
           socketId: socket.id,
@@ -878,11 +910,16 @@ class CampusConnectServer {
         this.healthMonitor.trackSocketDisconnection(socket.id);
         this.healthMonitor.trackUserLogout(socket.userData.userId);
 
+        // End pairing session if exists
+        if (socket.pairId) {
+          this.healthMonitor.trackPairingEnd(socket.pairId, false);
+        }
+
         this.pairingManager.handleDisconnect(socket.id);
         this.signalingHandler.cleanup(socket.id);
       });
 
-      // Error handling
+      // Error handling - ✅ FIXED: trackError now exists
       socket.on("error", (error) => {
         logger.error("Socket error", {
           socketId: socket.id,
@@ -902,13 +939,18 @@ class CampusConnectServer {
       logger.debug("Socket event handlers registered", { socketId: socket.id });
     });
 
-    // Server error handling
+    // ✅ FIXED: Remove problematic connection_error handler that was causing crashes
+    // Instead, use a safer error handler:
     this.io.engine.on("connection_error", (err) => {
       logger.error("Socket.IO engine connection error", {
         error: err.message,
         code: err.code,
+        context: err.context,
       });
-      this.healthMonitor.trackError(err, { source: "socketio_engine" });
+
+      // Don't call trackError to avoid circular issues
+      // Just log it for now
+      console.error("Socket.IO Engine Error:", err.message);
     });
 
     logger.info("Socket.IO setup completed");

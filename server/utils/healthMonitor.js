@@ -97,6 +97,121 @@ class EliteHealthMonitor {
     this.setupRealTimeTracking();
     this.loadHistoricalData();
   }
+  // ✅ ADD MISSING ERROR TRACKING METHOD
+  trackError(error, context = {}) {
+    this.metrics.errors.total++;
+
+    const errorType = error.name || "UnknownError";
+    this.metrics.errors.byType[errorType] =
+      (this.metrics.errors.byType[errorType] || 0) + 1;
+
+    this.metrics.errors.recent.unshift({
+      timestamp: Date.now(),
+      type: errorType,
+      message: error.message,
+      stack: error.stack,
+      context: context,
+    });
+
+    // Keep only last 50 errors
+    if (this.metrics.errors.recent.length > 50) {
+      this.metrics.errors.recent.pop();
+    }
+
+    // Update error rate
+    const totalRequests = this.metrics.requests.total;
+    this.metrics.errors.errorRate =
+      totalRequests > 0 ? (this.metrics.errors.total / totalRequests) * 100 : 0;
+  }
+
+  // ✅ ADD MISSING SYSTEM METRICS METHOD
+  getSystemMetrics() {
+    return {
+      cpu: {
+        usage: process.cpuUsage(),
+        load: os.loadavg(),
+        cores: os.cpus().length,
+        model: os.cpus()[0]?.model || "Unknown",
+      },
+      memory: {
+        total: os.totalmem(),
+        free: os.freemem(),
+        used: os.totalmem() - os.freemem(),
+        usage: ((os.totalmem() - os.freemem()) / os.totalmem()) * 100,
+      },
+      platform: {
+        type: os.type(),
+        release: os.release(),
+        arch: os.arch(),
+        uptime: os.uptime(),
+      },
+      process: {
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        pid: process.pid,
+        version: process.version,
+      },
+    };
+  }
+
+  // ✅ ADD MISSING ERROR METRICS METHOD
+  getErrorMetrics() {
+    return {
+      total: this.metrics.errors.total,
+      byType: { ...this.metrics.errors.byType },
+      recent: this.metrics.errors.recent.slice(0, 20),
+      errorRate: this.metrics.errors.errorRate,
+    };
+  }
+
+  // ✅ ADD MISSING PAIRING TRACKING METHODS
+  trackPairingStart(user1, user2) {
+    const pairId = `${user1.userId}-${user2.userId}-${Date.now()}`;
+    this.realTimeData.pairingSessions.set(pairId, {
+      user1,
+      user2,
+      startTime: Date.now(),
+      messages: 0,
+      active: true,
+    });
+
+    this.metrics.pairing.activePairs++;
+    this.updatePairingMetrics();
+
+    return pairId; // Return pairId for tracking
+  }
+
+  trackPairingEnd(pairId, success = true) {
+    const pairSession = this.realTimeData.pairingSessions.get(pairId);
+    if (pairSession) {
+      const duration = Date.now() - pairSession.startTime;
+
+      if (success) {
+        this.metrics.pairing.totalPairs++;
+        this.metrics.pairing.pairingHistory.push({
+          duration,
+          users: [pairSession.user1.userId, pairSession.user2.userId],
+          messages: pairSession.messages,
+          timestamp: Date.now(),
+        });
+      } else {
+        this.metrics.pairing.failedPairs++;
+      }
+
+      pairSession.active = false;
+      this.metrics.pairing.activePairs--;
+    }
+    this.updatePairingMetrics();
+  }
+
+  trackMessage(pairId) {
+    const pairSession = this.realTimeData.pairingSessions.get(pairId);
+    if (pairSession) {
+      pairSession.messages++;
+      this.metrics.business.messagesPerMinute =
+        this.metrics.business.messagesPerMinute * 0.9 + 1 * 0.1; // Smooth average
+    }
+  }
 
   // Real user tracking methods
   trackUserLogin(userId, userData) {

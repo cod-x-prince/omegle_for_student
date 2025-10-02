@@ -30,6 +30,7 @@ module.exports = {
           "wss:",
           "ws:", // For Socket.IO
           "https://*.supabase.co", // For Supabase
+          "https://pu-c.onrender.com", // ✅ ADDED: Your Render domain
         ],
         mediaSrc: [
           "'self'",
@@ -62,28 +63,37 @@ module.exports = {
     legacyHeaders: false,
   }),
 
-  // CORS configuration - FIXED
+  // ✅ IMPROVED CORS configuration
   corsConfig: {
     origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl requests)
+      // Allow requests with no origin (like mobile apps, Postman, or server-to-server requests)
       if (!origin) return callback(null, true);
 
       const allowedOrigins = process.env.ALLOWED_ORIGINS
         ? process.env.ALLOWED_ORIGINS.split(",")
         : [
-            "http://localhost:3000",
             "https://pu-c.onrender.com",
-            "http://localhost:3001",
+            "http://localhost:3000",
             "http://127.0.0.1:3000",
+            "http://localhost:3001",
           ];
 
-      if (allowedOrigins.indexOf(origin) !== -1) {
+      // Check if origin is in allowed list
+      if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
+        console.warn(`CORS blocked request from origin: ${origin}`);
         callback(new Error("Not allowed by CORS"));
       }
     },
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     credentials: true,
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Accept",
+      "Origin",
+    ],
   },
 };
