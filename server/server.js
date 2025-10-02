@@ -407,6 +407,16 @@ class CampusConnectServer {
       }
     });
 
+    // Video chat route
+    this.app.get("/video-chat", (req, res) => {
+      res.sendFile(path.join(__dirname, "../public/video-chat.html"));
+    });
+
+    // Text chat route
+    this.app.get("/chat", (req, res) => {
+      res.sendFile(path.join(__dirname, "../public/chat.html"));
+    });
+
     // Health check endpoint
     this.app.get("/health", (req, res) => {
       res.json({
@@ -660,6 +670,56 @@ class CampusConnectServer {
     });
 
     // =========================================================================
+    // NEW QUEUE MANAGEMENT ROUTES
+    // =========================================================================
+
+    // Queue status endpoint for monitoring
+    this.app.get("/api/queue/status", (req, res) => {
+      try {
+        const queueStatus = this.pairingManager.getDetailedQueueStatus();
+
+        res.json({
+          status: "success",
+          data: queueStatus,
+          timestamp: new Date().toISOString(),
+          serverTime: Date.now(),
+        });
+      } catch (error) {
+        logger.error("Error getting queue status", error);
+        res.status(500).json({
+          status: "error",
+          message: "Failed to get queue status",
+          error: error.message,
+        });
+      }
+    });
+
+    // Real-time queue monitoring endpoint
+    this.app.get("/api/queue/stream", (req, res) => {
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+
+      const sendQueueUpdate = () => {
+        try {
+          const queueStatus = this.pairingManager.getDetailedQueueStatus();
+          res.write(`data: ${JSON.stringify(queueStatus)}\n\n`);
+        } catch (error) {
+          console.error("Error sending queue update:", error);
+        }
+      };
+
+      // Send updates every 3 seconds
+      const interval = setInterval(sendQueueUpdate, 3000);
+
+      req.on("close", () => {
+        clearInterval(interval);
+        res.end();
+      });
+    });
+
+    // =========================================================================
     // EXISTING APPLICATION ROUTES
     // =========================================================================
 
@@ -743,7 +803,14 @@ class CampusConnectServer {
     });
 
     // Serve HTML files explicitly - FIXED ROUTING
-    const htmlFiles = ["/", "/login", "/signup", "/dashboard", "/chat"];
+    const htmlFiles = [
+      "/",
+      "/login",
+      "/signup",
+      "/dashboard",
+      "/chat",
+      "/video-chat",
+    ];
     htmlFiles.forEach((route) => {
       this.app.get(route, (req, res) => {
         let file = "index.html";
@@ -751,6 +818,7 @@ class CampusConnectServer {
         else if (route === "/signup") file = "signup.html";
         else if (route === "/dashboard") file = "dashboard.html";
         else if (route === "/chat") file = "chat.html";
+        else if (route === "/video-chat") file = "video-chat.html";
 
         res.sendFile(path.join(__dirname, "../public", file));
       });
@@ -810,7 +878,7 @@ class CampusConnectServer {
     // Authentication middleware
     this.io.use(authMiddleware.authenticateToken);
 
-    // Connection handling
+    // NEW: Handle pairing:join event
     this.io.on("connection", (socket) => {
       logger.info("New socket connection established", {
         socketId: socket.id,
@@ -828,41 +896,59 @@ class CampusConnectServer {
       // Track the connection with real data
       this.healthMonitor.trackSocketConnection(socket.id, userData);
 
-      // Add to pairing queue
-      try {
-        const addedToQueue = this.pairingManager.addToQueue(
-          socket,
-          socket.userData
-        );
+      // NEW: Handle pairing join requests
+      socket.on("pairing:join", (data) => {
+        logger.info("User requesting to join pairing queue", {
+          socketId: socket.id,
+          email: socket.userData.email,
+          mode: data.mode || "video",
+        });
 
-        if (!addedToQueue) {
-          logger.warn("User could not be added to queue", {
+        try {
+          const addedToQueue = this.pairingManager.addToQueue(
+            socket,
+            socket.userData
+          );
+
+          if (!addedToQueue) {
+            logger.warn("User could not be added to queue", {
+              socketId: socket.id,
+              reason: "Already in queue or paired",
+            });
+            socket.emit("pairing:error", { message: "Already in queue" });
+            return;
+          }
+
+          logger.debug("User successfully added to pairing queue", {
             socketId: socket.id,
-            reason: "Already in queue or paired",
+            queuePosition: this.pairingManager.waitingQueue.length,
           });
-          socket.emit("error", { message: "Already in queue" });
+        } catch (error) {
+          logger.error("Error adding user to queue", {
+            socketId: socket.id,
+            error: error.message,
+          });
+
+          this.healthMonitor.trackError(error, {
+            socketId: socket.id,
+            action: "add_to_queue",
+          });
+
+          socket.emit("pairing:error", { message: "Failed to join queue" });
           return;
         }
+      });
 
-        logger.debug("User successfully added to pairing queue", {
+      // NEW: Handle pairing leave requests
+      socket.on("pairing:leave", () => {
+        logger.info("User requesting to leave pairing queue", {
           socketId: socket.id,
-          queuePosition: this.pairingManager.waitingQueue.length,
-        });
-      } catch (error) {
-        logger.error("Error adding user to queue", {
-          socketId: socket.id,
-          error: error.message,
+          email: socket.userData.email,
         });
 
-        // ✅ FIXED: trackError now exists
-        this.healthMonitor.trackError(error, {
-          socketId: socket.id,
-          action: "add_to_queue",
-        });
-
-        socket.emit("error", { message: "Failed to join queue" });
-        return;
-      }
+        this.pairingManager.removeFromQueue(socket.id);
+        socket.emit("pairing:left", { message: "Left pairing queue" });
+      });
 
       // Signaling events
       socket.on("signal", (data) => {
@@ -874,7 +960,7 @@ class CampusConnectServer {
         this.signalingHandler.handleSignal(socket, data);
       });
 
-      // Track pairing events - ✅ NOW WORKING
+      // Track pairing events
       socket.on("user_paired", (data) => {
         const pairId = this.healthMonitor.trackPairingStart(
           { userId: socket.userData.userId, email: socket.userData.email },
@@ -919,7 +1005,7 @@ class CampusConnectServer {
         this.signalingHandler.cleanup(socket.id);
       });
 
-      // Error handling - ✅ FIXED: trackError now exists
+      // Error handling
       socket.on("error", (error) => {
         logger.error("Socket error", {
           socketId: socket.id,

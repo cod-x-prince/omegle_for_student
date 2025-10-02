@@ -47,20 +47,33 @@
         <!-- Quick Actions -->
         <section class="actions-section">
           <div class="action-cards">
-            <div class="feature-card">
-              <div class="feature-icon">🔍</div>
-              <h3 class="feature-title">Find Study Partner</h3>
+            <div class="feature-card video-card">
+              <div class="feature-icon">🎥</div>
+              <h3 class="feature-title">Video Study Session</h3>
               <p class="feature-description">
                 Connect with another student for a real-time video study
                 session. Perfect for group projects and collaborative learning.
               </p>
-              <button id="find-partner-btn" class="cta-primary large">
-                Start Searching
+              <button id="start-video-chat" class="cta-primary large">
+                Start Video Chat
               </button>
               <div class="feature-highlight"></div>
             </div>
 
-            <div class="feature-card">
+            <div class="feature-card text-card">
+              <div class="feature-icon">💬</div>
+              <h3 class="feature-title">Text Chat Only</h3>
+              <p class="feature-description">
+                Connect with a study partner for text-based collaboration. Share
+                notes, ask questions, and work together in real-time.
+              </p>
+              <button id="start-text-chat" class="cta-secondary large">
+                Start Text Chat
+              </button>
+              <div class="feature-highlight"></div>
+            </div>
+
+            <div class="feature-card group-card">
               <div class="feature-icon">👥</div>
               <h3 class="feature-title">Study Groups</h3>
               <p class="feature-description">
@@ -70,95 +83,32 @@
               <button class="cta-secondary large" disabled>Coming Soon</button>
               <div class="feature-highlight"></div>
             </div>
-
-            <div class="feature-card">
-              <div class="feature-icon">📚</div>
-              <h3 class="feature-title">Study Resources</h3>
-              <p class="feature-description">
-                Access shared notes, study materials, and educational resources
-                from students across your university.
-              </p>
-              <button class="cta-secondary large" disabled>Coming Soon</button>
-              <div class="feature-highlight"></div>
-            </div>
           </div>
         </section>
 
-        <!-- Video Canvas Section (Hidden by default) -->
-        <section class="video-section" id="video-section" style="display: none">
-          <div class="section-header">
-            <h2>Study Session</h2>
-            <p>You're now connected with a study partner</p>
-          </div>
-
-          <div class="video-canvas-container">
-            <!-- Remote User Video -->
-            <div class="video-wrapper remote-wrapper">
-              <video
-                id="remote-video"
-                class="video-element"
-                autoplay
-                playsinline
-              ></video>
-              <div class="video-label">Study Partner</div>
-              <div class="video-overlay" id="remote-overlay">
-                <div class="waiting-message">
-                  <div class="spinner"></div>
-                  <p>Waiting for partner to join...</p>
-                </div>
+        <!-- Stats Section -->
+        <section class="stats-section">
+          <div class="stats-container">
+            <div class="stat-item">
+              <div class="stat-icon">⏱️</div>
+              <div class="stat-content">
+                <div class="stat-number" id="session-count">0</div>
+                <div class="stat-label">Study Sessions</div>
               </div>
             </div>
-
-            <!-- Local User Video -->
-            <div class="video-wrapper local-wrapper">
-              <video
-                id="local-video"
-                class="video-element"
-                autoplay
-                playsinline
-                muted
-              ></video>
-              <div class="video-label">You</div>
+            <div class="stat-item">
+              <div class="stat-icon">🤝</div>
+              <div class="stat-content">
+                <div class="stat-number" id="partner-count">0</div>
+                <div class="stat-label">Study Partners</div>
+              </div>
             </div>
-          </div>
-
-          <!-- Session Controls -->
-          <div class="session-controls">
-            <button id="toggle-video" class="btn-control" title="Toggle Video">
-              📹
-            </button>
-            <button id="toggle-audio" class="btn-control" title="Toggle Audio">
-              🎤
-            </button>
-            <button id="end-session" class="btn-danger" title="End Session">
-              📞
-            </button>
-          </div>
-
-          <div class="session-info">
-            <p id="call-status" class="status-connected">
-              🔍 Searching for study partner...
-            </p>
-          </div>
-        </section>
-
-        <!-- Matchmaking Status Section -->
-        <section
-          class="status-section"
-          id="status-section"
-          style="display: none"
-        >
-          <div class="status-card">
-            <div class="searching-animation">
-              <div class="spinner"></div>
-              <h3>🔍 Searching for a study partner...</h3>
-              <p>Please wait while we connect you with another student</p>
-              <p id="queue-status" class="queue-info">
-                Position in queue: <span id="queue-position">1</span>
-              </p>
-              <button id="cancel-search-btn" class="cta-secondary">
-                Cancel Search
-              </button>
+            <div class="stat-item">
+              <div class="stat-icon">⭐</div>
+              <div class="stat-content">
+                <div class="stat-number" id="rating">5.0</div>
+                <div class="stat-label">Average Rating</div>
+              </div>
             </div>
           </div>
         </section>
@@ -166,14 +116,10 @@
         <!-- Recent Activity -->
         <section class="activity-section">
           <h3>Recent Activity</h3>
-          <div class="activity-list">
+          <div class="activity-list" id="activity-list">
             <div class="activity-item">
               <span class="activity-icon">🕒</span>
               <span>Ready to start your first study session!</span>
-            </div>
-            <div class="activity-item">
-              <span class="activity-icon">🎯</span>
-              <span>Click "Start Searching" to find a study partner</span>
             </div>
           </div>
         </section>
@@ -194,7 +140,6 @@
     <script src="/js/auth/authManager.js"></script>
     <script src="/js/utils/logger.js"></script>
     <script src="/js/utils/helpers.js"></script>
-    <script src="/js/video/videoManager.js"></script>
     <script src="/js/dashboard.js"></script>
   </body>
 </html>

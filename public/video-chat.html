@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CampusConnect - Video Chat</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <div class="video-chat-container">
+      <!-- Header -->
+      <div class="video-chat-header">
+        <div>
+          <h2>🎥 CampusConnect Video Chat</h2>
+          <div class="connection-quality">
+            <span>Connection:</span>
+            <div class="quality-dot" id="connectionQuality"></div>
+            <span id="connectionStatus" class="status waiting"
+              >Connecting...</span
+            >
+          </div>
+        </div>
+        <div>
+          <button id="disconnectBtn" class="control-btn">📞 End Call</button>
+        </div>
+      </div>
+
+      <!-- Main Content -->
+      <div class="video-main">
+        <!-- Video Section -->
+        <div class="video-section">
+          <div class="video-container">
+            <div class="video-grid">
+              <!-- Local Video -->
+              <div class="local-video-container">
+                <div class="video-label">You</div>
+                <video
+                  id="localVideo"
+                  class="video-element"
+                  autoplay
+                  muted
+                  playsinline
+                ></video>
+                <div id="local-overlay" class="video-overlay">
+                  <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <p>Starting your camera...</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Remote Video -->
+              <div class="remote-video-container">
+                <div class="video-label">Partner</div>
+                <video
+                  id="remoteVideo"
+                  class="video-element"
+                  autoplay
+                  playsinline
+                ></video>
+                <div id="remote-overlay" class="video-overlay">
+                  <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <p>Waiting for partner...</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Video Controls -->
+          <div class="video-controls">
+            <button id="toggleVideo" class="control-btn active">
+              🎥 Video
+            </button>
+            <button id="toggleAudio" class="control-btn active">
+              🎤 Audio
+            </button>
+            <button id="switchCamera" class="control-btn">
+              🔄 Switch Camera
+            </button>
+            <button id="fullscreenBtn" class="control-btn">⛶ Fullscreen</button>
+          </div>
+        </div>
+
+        <!-- Chat Section -->
+        <div class="chat-section">
+          <div class="chat-messages" id="chatMessages">
+            <div class="message system">
+              Welcome to Video Chat! You'll be connected with another student
+              shortly.
+            </div>
+          </div>
+
+          <div class="typing-indicator" id="typingIndicator">
+            Partner is typing...
+          </div>
+
+          <div class="chat-input-container">
+            <textarea
+              id="messageInput"
+              class="message-input"
+              placeholder="Connecting..."
+              rows="1"
+              disabled
+            ></textarea>
+            <button id="sendButton" class="send-button" disabled>➤</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/js/video/videoManager.js"></script>
+    <script src="/js/chat/chatManager.js"></script>
+    <script src="/js/video/videoChatApp.js"></script>
+  </body>
+</html>

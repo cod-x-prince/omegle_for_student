@@ -1,4 +1,4 @@
-// Dashboard controller with video element functionality
+// Dashboard controller with enhanced pairing system
 class DashboardController {
   constructor() {
     // Safe logger initialization
@@ -11,6 +11,8 @@ class DashboardController {
     this.isSearching = false;
     this.isInSession = false;
     this.socketInitialized = false;
+    this.currentMode = null; // 'video' or 'text'
+    this.encouragementInterval = null;
 
     // Video elements
     this.localVideo = null;
@@ -69,6 +71,12 @@ class DashboardController {
 
       // 5. Initialize socket connection (but don't auto-connect to queue)
       this.initializeSocket();
+
+      // 6. Update stats
+      this.updateStats();
+
+      // 7. Load activities
+      this.loadActivities();
 
       this.logger.info(
         "DashboardController: Dashboard initialized successfully"
@@ -130,6 +138,89 @@ class DashboardController {
     } catch (error) {
       this.logger.error("DashboardController: Error loading user data", error);
     }
+  }
+
+  setupEventListeners() {
+    this.logger.info("DashboardController: Setting up UI event listeners");
+
+    // Logout button
+    const logoutBtn = document.getElementById("logout-btn");
+    if (logoutBtn) {
+      logoutBtn.addEventListener("click", () => {
+        this.logger.info("DashboardController: Logout initiated");
+        this.cleanup();
+        this.authManager.logout();
+      });
+    }
+
+    // Video chat button
+    const startVideoChatBtn = document.getElementById("start-video-chat");
+    if (startVideoChatBtn) {
+      startVideoChatBtn.addEventListener("click", () => {
+        this.logger.info("DashboardController: Start video chat clicked");
+        this.startVideoChat();
+      });
+    }
+
+    // Text chat button
+    const startTextChatBtn = document.getElementById("start-text-chat");
+    if (startTextChatBtn) {
+      startTextChatBtn.addEventListener("click", () => {
+        this.logger.info("DashboardController: Start text chat clicked");
+        this.startTextChat();
+      });
+    }
+
+    // Legacy find partner button (keep for compatibility)
+    const findPartnerBtn = document.getElementById("find-partner-btn");
+    if (findPartnerBtn) {
+      findPartnerBtn.addEventListener("click", () => {
+        this.logger.info("DashboardController: Find partner button clicked");
+        this.startMatchmaking();
+      });
+    }
+
+    // Cancel search button
+    const cancelSearchBtn = document.getElementById("cancel-search-btn");
+    if (cancelSearchBtn) {
+      cancelSearchBtn.addEventListener("click", () => {
+        this.logger.info("DashboardController: Cancel search button clicked");
+        this.cancelMatchmaking();
+      });
+    }
+
+    // Session control buttons
+    const toggleVideoBtn = document.getElementById("toggle-video");
+    const toggleAudioBtn = document.getElementById("toggle-audio");
+    const endSessionBtn = document.getElementById("end-session");
+
+    if (toggleVideoBtn) {
+      toggleVideoBtn.addEventListener("click", () => {
+        this.logger.info("DashboardController: Toggle video clicked");
+        this.toggleVideo();
+      });
+    }
+
+    if (toggleAudioBtn) {
+      toggleAudioBtn.addEventListener("click", () => {
+        this.logger.info("DashboardController: Toggle audio clicked");
+        this.toggleAudio();
+      });
+    }
+
+    if (endSessionBtn) {
+      endSessionBtn.addEventListener("click", () => {
+        this.logger.info("DashboardController: End session clicked");
+        this.endSession();
+      });
+    }
+
+    // Window resize handler
+    window.addEventListener("resize", () => {
+      this.logger.debug("DashboardController: Window resized");
+    });
+
+    this.logger.info("DashboardController: UI event listeners setup completed");
   }
 
   initializeSocket() {
@@ -196,13 +287,6 @@ class DashboardController {
         connected: this.socket.connected,
       });
       this.updateConnectionStatus(true);
-
-      // Only add to queue if we're actively searching
-      if (this.isSearching) {
-        this.logger.info(
-          "DashboardController: Socket connected while searching, ensuring in queue"
-        );
-      }
     });
 
     this.socket.on("disconnect", (reason) => {
@@ -229,15 +313,52 @@ class DashboardController {
       }
     });
 
-    // Matchmaking events
-    this.socket.on("paired", (data) => {
+    // NEW: Enhanced pairing system events
+    this.socket.on("pairing:queued", (data) => {
+      this.logger.info("DashboardController: Added to pairing queue", data);
+      this.showQueueStatus(data.position, data.queueSize, data.totalUsers);
+    });
+
+    this.socket.on("pairing:status", (data) => {
+      this.logger.info("DashboardController: Queue status update", data);
+      this.handleQueueStatusUpdate(data);
+    });
+
+    this.socket.on("pairing:matched", (data) => {
       this.logger.info("DashboardController: Paired with partner!", data);
       this.handlePairingSuccess(data);
     });
 
+    this.socket.on("pairing:timeout", (data) => {
+      this.logger.info("DashboardController: Pairing timeout received", data);
+      this.handlePairingTimeout(data);
+    });
+
+    this.socket.on("pairing:error", (error) => {
+      this.logger.error("DashboardController: Pairing error", error);
+      this.showError(`Pairing error: ${error.message}`);
+      this.cancelMatchmaking();
+    });
+
+    this.socket.on("pairing:left", (data) => {
+      this.logger.info("DashboardController: Left pairing queue", data);
+      this.cancelMatchmaking();
+    });
+
+    // Legacy events (for backward compatibility)
+    this.socket.on("paired", (data) => {
+      this.logger.info(
+        "DashboardController: Paired with partner (legacy)!",
+        data
+      );
+      this.handlePairingSuccess(data);
+    });
+
     this.socket.on("pairing-timeout", () => {
-      this.logger.info("DashboardController: Pairing timeout received");
-      this.handlePairingTimeout();
+      this.logger.info(
+        "DashboardController: Pairing timeout received (legacy)"
+      );
+      this.handlePairingTimeout({});
     });
 
     this.socket.on("queue-update", (data) => {
@@ -277,70 +398,159 @@ class DashboardController {
     this.logger.info("DashboardController: Socket event handlers registered");
   }
 
-  setupEventListeners() {
-    this.logger.info("DashboardController: Setting up UI event listeners");
+  // NEW: Enhanced queue status handling
+  showQueueStatus(position, queueSize, totalUsers) {
+    if (!this.isSearching) return;
 
-    // Logout button
-    const logoutBtn = document.getElementById("logout-btn");
-    if (logoutBtn) {
-      logoutBtn.addEventListener("click", () => {
-        this.logger.info("DashboardController: Logout initiated");
-        this.cleanup();
-        this.authManager.logout();
+    const queuePosition = document.getElementById("queue-position");
+    if (queuePosition) {
+      queuePosition.textContent = position || "1";
+    }
+
+    const indicator = document.getElementById("connection-indicator");
+    if (indicator) {
+      if (queueSize === 1) {
+        indicator.textContent = "👋 You're the first one here!";
+        indicator.style.background = "var(--accent-secondary)";
+      } else {
+        indicator.textContent = `🟡 Position: ${position} of ${queueSize}`;
+        indicator.style.background = "var(--accent-color)";
+      }
+      indicator.style.display = "block";
+    }
+
+    if (queueSize === 1) {
+      this.addActivity("👋 Waiting for another student to join...");
+    } else {
+      this.addActivity(`📊 Queue position: ${position} of ${queueSize}`);
+    }
+  }
+
+  // NEW: Handle queue status updates with encouragement
+  handleQueueStatusUpdate(data) {
+    if (!this.isSearching) return;
+
+    const indicator = document.getElementById("connection-indicator");
+    if (indicator && data.message) {
+      indicator.textContent = data.message;
+      indicator.style.display = "block";
+
+      // Add visual feedback for encouragement messages
+      if (data.showEncouragement) {
+        indicator.style.background = "var(--warning)";
+        indicator.style.animation = "pulse 2s infinite";
+
+        // Remove animation after 5 seconds
+        setTimeout(() => {
+          indicator.style.animation = "";
+        }, 5000);
+      }
+    }
+
+    // Update queue info if provided
+    if (data.queueSize !== undefined) {
+      const queuePosition = document.getElementById("queue-position");
+      if (queuePosition) {
+        queuePosition.textContent = data.position || "1";
+      }
+    }
+
+    // Log the status update
+    this.logger.debug(
+      "DashboardController: Queue status update received",
+      data
+    );
+  }
+
+  // NEW METHODS FOR VIDEO AND TEXT CHAT
+  startVideoChat() {
+    this.logger.info("DashboardController: Starting video chat");
+    this.startMatchmakingWithMode("video");
+  }
+
+  startTextChat() {
+    this.logger.info("DashboardController: Starting text chat");
+    this.startMatchmakingWithMode("text");
+  }
+
+  async startMatchmakingWithMode(mode) {
+    this.logger.info(
+      `DashboardController: Starting matchmaking for ${mode} chat`
+    );
+
+    if (this.isSearching) {
+      this.logger.warn("DashboardController: Already searching for partner");
+      return;
+    }
+
+    this.isSearching = true;
+    this.currentMode = mode; // Store the current mode
+
+    // Update UI to show searching state
+    this.showSearchingState(mode);
+
+    // Ensure socket is connected and ready
+    if (!this.socket || !this.socket.connected) {
+      this.logger.info(
+        "DashboardController: Socket not connected, initializing..."
+      );
+      this.initializeSocket();
+
+      // Wait for connection
+      await new Promise((resolve) => {
+        if (this.socket.connected) {
+          resolve();
+        } else {
+          this.socket.once("connect", resolve);
+        }
       });
     }
 
-    // Find partner button
-    const findPartnerBtn = document.getElementById("find-partner-btn");
-    if (findPartnerBtn) {
-      findPartnerBtn.addEventListener("click", () => {
-        this.logger.info("DashboardController: Find partner button clicked");
-        this.startMatchmaking();
-      });
-    }
-
-    // Cancel search button
-    const cancelSearchBtn = document.getElementById("cancel-search-btn");
-    if (cancelSearchBtn) {
-      cancelSearchBtn.addEventListener("click", () => {
-        this.logger.info("DashboardController: Cancel search button clicked");
+    // For video chat, initialize video manager and start camera
+    if (mode === "video") {
+      try {
+        await this.initializeVideoManager();
+        this.logger.info(
+          "DashboardController: Video manager initialized successfully"
+        );
+      } catch (error) {
+        this.logger.error(
+          "DashboardController: Failed to initialize video manager",
+          error
+        );
+        this.showError("Failed to access camera. Please check permissions.");
         this.cancelMatchmaking();
-      });
+        return;
+      }
     }
 
-    // Session control buttons
-    const toggleVideoBtn = document.getElementById("toggle-video");
-    const toggleAudioBtn = document.getElementById("toggle-audio");
-    const endSessionBtn = document.getElementById("end-session");
+    // Join the pairing queue with the specified mode
+    this.joinPairingQueue(mode);
+  }
 
-    if (toggleVideoBtn) {
-      toggleVideoBtn.addEventListener("click", () => {
-        this.logger.info("DashboardController: Toggle video clicked");
-        this.toggleVideo();
-      });
+  // NEW METHOD: Join pairing queue with mode
+  joinPairingQueue(mode) {
+    if (!this.socket || !this.socket.connected) {
+      this.logger.error(
+        "DashboardController: Socket not connected for pairing"
+      );
+      this.showError("Connection error. Please try again.");
+      this.cancelMatchmaking();
+      return;
     }
 
-    if (toggleAudioBtn) {
-      toggleAudioBtn.addEventListener("click", () => {
-        this.logger.info("DashboardController: Toggle audio clicked");
-        this.toggleAudio();
-      });
-    }
+    this.logger.info(
+      `DashboardController: Joining pairing queue for ${mode} chat`
+    );
 
-    if (endSessionBtn) {
-      endSessionBtn.addEventListener("click", () => {
-        this.logger.info("DashboardController: End session clicked");
-        this.endSession();
-      });
-    }
-
-    // Window resize handler
-    window.addEventListener("resize", () => {
-      // Handle any responsive layout adjustments if needed
-      this.logger.debug("DashboardController: Window resized");
+    // Emit the pairing request with mode
+    this.socket.emit("pairing:join", {
+      mode: mode,
+      userData: this.authManager.getUserData(),
     });
 
-    this.logger.info("DashboardController: UI event listeners setup completed");
+    // Add to activity
+    this.addActivity(`🔍 Started searching for ${mode} study partner`);
   }
 
   async startMatchmaking() {
@@ -354,7 +564,7 @@ class DashboardController {
     this.isSearching = true;
 
     // Update UI to show searching state
-    this.showSearchingState();
+    this.showSearchingState("video"); // Default to video for legacy button
 
     // Ensure socket is connected and ready
     if (!this.socket || !this.socket.connected) {
@@ -388,6 +598,12 @@ class DashboardController {
       this.cancelMatchmaking();
       return;
     }
+
+    // Join pairing queue (legacy method)
+    this.socket.emit("pairing:join", {
+      mode: "video",
+      userData: this.authManager.getUserData(),
+    });
 
     this.logger.info(
       "DashboardController: Matchmaking started - ready for pairing"
@@ -451,18 +667,23 @@ class DashboardController {
     }
 
     this.isSearching = false;
+    this.currentMode = null;
+
+    // Clear any encouragement intervals
+    if (this.encouragementInterval) {
+      clearInterval(this.encouragementInterval);
+      this.encouragementInterval = null;
+    }
+
+    // Notify server we're leaving the queue
+    if (this.socket && this.socket.connected) {
+      this.socket.emit("pairing:leave");
+    }
 
     // Clean up video manager
     if (this.videoManager) {
       this.videoManager.cleanup();
       this.videoManager = null;
-    }
-
-    // Don't disconnect socket entirely, just remove from queue
-    if (this.socket && this.socket.connected) {
-      // The server will automatically remove from queue on disconnect
-      // but we want to keep the socket connection for future use
-      this.logger.info("DashboardController: Keeping socket connection active");
     }
 
     // Update UI back to normal state
@@ -481,8 +702,14 @@ class DashboardController {
     this.isSearching = false;
     this.isInSession = true;
 
-    // Update video manager with peer information
-    if (this.videoManager) {
+    // Clear any encouragement intervals
+    if (this.encouragementInterval) {
+      clearInterval(this.encouragementInterval);
+      this.encouragementInterval = null;
+    }
+
+    // Update video manager with peer information if video mode
+    if (this.currentMode === "video" && this.videoManager) {
       this.videoManager.peerId = data.peerId;
       this.videoManager.isInitiator = data.initiator;
 
@@ -500,26 +727,46 @@ class DashboardController {
       }
     }
 
-    // Show video section and hide searching state
-    this.showVideoSection();
-    this.hideSearchingState();
+    // Redirect to appropriate page based on mode
+    setTimeout(() => {
+      if (this.currentMode === "video") {
+        this.addActivity("✅ Matched with video study partner!");
+        window.location.href = "/video-chat";
+      } else {
+        this.addActivity("✅ Matched with text chat partner!");
+        window.location.href = "/chat";
+      }
+    }, 1000);
 
-    // Update call status
-    this.updateCallStatus("Connected with study partner", "connected");
-
-    this.logger.info("DashboardController: Session started with partner");
+    this.logger.info(
+      `DashboardController: ${this.currentMode} session starting with partner`
+    );
   }
 
-  handlePairingTimeout() {
-    this.logger.info("DashboardController: Handling pairing timeout");
+  // UPDATED: Enhanced pairing timeout handling
+  handlePairingTimeout(data) {
+    this.logger.info("DashboardController: Handling pairing timeout", data);
 
     this.isSearching = false;
+    this.currentMode = null;
     this.hideSearchingState();
 
-    this.showMessage(
-      "No study partners found at the moment. Please try again later.",
-      "info"
-    );
+    // Clear any encouragement intervals
+    if (this.encouragementInterval) {
+      clearInterval(this.encouragementInterval);
+      this.encouragementInterval = null;
+    }
+
+    // Show timeout message with suggestions
+    const message = data.message || "No study partners available right now";
+    const suggestion = data.suggestion || "Try again during peak hours!";
+
+    this.showMessage(`${message} ${suggestion}`, "info");
+
+    // Add retry button if suggested
+    if (data.retryAfter) {
+      this.showRetryButton(data.retryAfter);
+    }
 
     // Clean up video manager
     if (this.videoManager) {
@@ -529,12 +776,41 @@ class DashboardController {
 
     // Reset video elements
     this.showVideoPlaceholders();
+
+    // Add to activity log
+    this.addActivity("⏰ Pairing timeout - no partners available");
+  }
+
+  // NEW: Show retry button after timeout
+  showRetryButton(retryAfter) {
+    const statusSection = document.getElementById("status-section");
+    if (!statusSection) return;
+
+    const retryButton = document.createElement("button");
+    retryButton.className = "cta-primary large";
+    retryButton.textContent = "🔄 Try Again";
+    retryButton.style.marginTop = "15px";
+
+    retryButton.addEventListener("click", () => {
+      this.logger.info("DashboardController: Retry search after timeout");
+      // Re-trigger the last search mode
+      if (this.currentMode === "text") {
+        this.startTextChat();
+      } else {
+        this.startVideoChat();
+      }
+    });
+
+    statusSection
+      .querySelector(".searching-animation")
+      .appendChild(retryButton);
   }
 
   handlePeerDisconnected() {
     this.logger.info("DashboardController: Handling peer disconnection");
 
     this.isInSession = false;
+    this.currentMode = null;
 
     this.showMessage("Your study partner has disconnected.", "info");
     this.endSession();
@@ -576,6 +852,7 @@ class DashboardController {
     this.logger.info("DashboardController: Ending session");
 
     this.isInSession = false;
+    this.currentMode = null;
 
     // Clean up video manager
     if (this.videoManager) {
@@ -594,24 +871,59 @@ class DashboardController {
   }
 
   // UI State Management Methods
-  showSearchingState() {
+  showSearchingState(mode) {
     const statusSection = document.getElementById("status-section");
+    const videoBtn = document.getElementById("start-video-chat");
+    const textBtn = document.getElementById("start-text-chat");
     const findPartnerBtn = document.getElementById("find-partner-btn");
 
     if (statusSection) statusSection.style.display = "block";
+
+    // Disable appropriate buttons based on mode
+    if (videoBtn) {
+      videoBtn.disabled = true;
+      if (mode === "video") {
+        videoBtn.textContent = "Searching...";
+      }
+    }
+
+    if (textBtn) {
+      textBtn.disabled = true;
+      if (mode === "text") {
+        textBtn.textContent = "Searching...";
+      }
+    }
+
     if (findPartnerBtn) {
       findPartnerBtn.disabled = true;
       findPartnerBtn.textContent = "Searching...";
     }
 
-    this.updateCallStatus("Searching for study partner...", "searching");
+    this.updateCallStatus(
+      `Searching for ${mode} study partner...`,
+      "searching"
+    );
   }
 
   hideSearchingState() {
     const statusSection = document.getElementById("status-section");
+    const videoBtn = document.getElementById("start-video-chat");
+    const textBtn = document.getElementById("start-text-chat");
     const findPartnerBtn = document.getElementById("find-partner-btn");
 
     if (statusSection) statusSection.style.display = "none";
+
+    // Reset all buttons
+    if (videoBtn) {
+      videoBtn.disabled = false;
+      videoBtn.textContent = "Start Video Chat";
+    }
+
+    if (textBtn) {
+      textBtn.disabled = false;
+      textBtn.textContent = "Start Text Chat";
+    }
+
     if (findPartnerBtn) {
       findPartnerBtn.disabled = false;
       findPartnerBtn.textContent = "Start Searching";
@@ -671,6 +983,124 @@ class DashboardController {
     }
   }
 
+  // NEW METHOD: Add activity to recent activity list
+  addActivity(message) {
+    const activityList = document.getElementById("activity-list");
+    if (!activityList) return;
+
+    const activityItem = document.createElement("div");
+    activityItem.className = "activity-item";
+    activityItem.innerHTML = `
+        <span class="activity-icon">${this.getActivityIcon(message)}</span>
+        <span>${message}</span>
+    `;
+
+    // Add to top of list
+    activityList.insertBefore(activityItem, activityList.firstChild);
+
+    // Keep only last 5 activities
+    while (activityList.children.length > 5) {
+      activityList.removeChild(activityList.lastChild);
+    }
+
+    // Save to localStorage
+    this.saveActivity(message);
+  }
+
+  // NEW METHOD: Get appropriate icon for activity
+  getActivityIcon(message) {
+    if (message.includes("video")) return "🎥";
+    if (message.includes("text")) return "💬";
+    if (message.includes("searching")) return "🔍";
+    if (message.includes("Queue")) return "📊";
+    if (message.includes("Matched")) return "✅";
+    if (message.includes("Connected")) return "✅";
+    if (message.includes("Waiting")) return "👋";
+    if (message.includes("timeout")) return "⏰";
+    return "🕒";
+  }
+
+  // NEW METHOD: Save activity to localStorage
+  saveActivity(message) {
+    try {
+      const activities = JSON.parse(
+        localStorage.getItem("userActivities") || "[]"
+      );
+      activities.unshift({
+        message,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Keep only last 10 activities
+      if (activities.length > 10) {
+        activities.pop();
+      }
+
+      localStorage.setItem("userActivities", JSON.stringify(activities));
+    } catch (error) {
+      this.logger.error("DashboardController: Error saving activity", error);
+    }
+  }
+
+  // NEW METHOD: Load activities from localStorage
+  loadActivities() {
+    try {
+      const activities = JSON.parse(
+        localStorage.getItem("userActivities") || "[]"
+      );
+      const activityList = document.getElementById("activity-list");
+
+      if (!activityList) return;
+
+      // Clear existing activities except the default one
+      const defaultItem = activityList.querySelector(".activity-item");
+      activityList.innerHTML = "";
+
+      if (defaultItem) {
+        activityList.appendChild(defaultItem);
+      }
+
+      // Add saved activities
+      activities.forEach((activity) => {
+        const activityItem = document.createElement("div");
+        activityItem.className = "activity-item";
+        activityItem.innerHTML = `
+          <span class="activity-icon">${this.getActivityIcon(
+            activity.message
+          )}</span>
+          <span>${activity.message}</span>
+        `;
+        activityList.appendChild(activityItem);
+      });
+
+      this.logger.debug("DashboardController: Activities loaded", {
+        count: activities.length,
+      });
+    } catch (error) {
+      this.logger.error("DashboardController: Error loading activities", error);
+    }
+  }
+
+  // NEW METHOD: Update stats
+  updateStats() {
+    try {
+      // Load stats from localStorage or set defaults
+      const stats = JSON.parse(localStorage.getItem("userStats") || "{}");
+
+      const sessionCount = document.getElementById("session-count");
+      const partnerCount = document.getElementById("partner-count");
+      const rating = document.getElementById("rating");
+
+      if (sessionCount) sessionCount.textContent = stats.sessions || 0;
+      if (partnerCount) partnerCount.textContent = stats.partners || 0;
+      if (rating) rating.textContent = stats.rating || "5.0";
+
+      this.logger.debug("DashboardController: Stats updated", stats);
+    } catch (error) {
+      this.logger.error("DashboardController: Error updating stats", error);
+    }
+  }
+
   showMessage(message, type = "info") {
     this.logger.info(`DashboardController: Showing ${type} message`, {
       message,
@@ -727,6 +1157,13 @@ class DashboardController {
 
     this.isSearching = false;
     this.isInSession = false;
+    this.currentMode = null;
+
+    // Clear any intervals
+    if (this.encouragementInterval) {
+      clearInterval(this.encouragementInterval);
+      this.encouragementInterval = null;
+    }
 
     if (this.videoManager) {
       this.videoManager.cleanup();
