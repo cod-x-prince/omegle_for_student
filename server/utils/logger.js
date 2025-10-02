@@ -1,11 +1,11 @@
-// server/utils/logger.js - ELITE LEVEL LOGGING
+// server/utils/logger.js - ELITE LEVEL LOGGING (COMPATIBLE VERSION)
 const winston = require("winston");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const { v4: uuidv4 } = require("uuid");
 
-// Enhanced log configuration
+// Enhanced log configuration with backward compatibility
 const LOG_LEVELS = {
   levels: {
     emergency: 0,
@@ -79,9 +79,8 @@ const consoleFormat = winston.format.combine(
     }
 
     if (Object.keys(meta).length > 0) {
-      // Format metadata nicely
       const cleanMeta = Object.entries(meta).reduce((acc, [key, value]) => {
-        if (value !== undefined && value !== null) {
+        if (value !== undefined && value !== null && !key.startsWith("_")) {
           acc[key] = value;
         }
         return acc;
@@ -226,6 +225,10 @@ function redactSensitiveInfo(obj) {
 
 logger.format = winston.format.combine(redactionFormat(), eliteFormat);
 
+// BACKWARD COMPATIBILITY: Add alias methods
+logger.warn = logger.warning; // Add warn alias for backward compatibility
+logger.log = logger.info; // Add log alias
+
 // Performance monitoring
 class PerformanceTracker {
   constructor() {
@@ -361,7 +364,6 @@ logger.alert = (message, meta = {}) => {
 
   // In production, you could integrate with external alerting systems here
   if (process.env.NODE_ENV === "production") {
-    // Integrate with: PagerDuty, Slack, Email, etc.
     console.error(`🚨 ALERT: ${message}`, meta);
   }
 };
@@ -370,7 +372,6 @@ logger.critical = (message, meta = {}) => {
   logger.critical(message, { ...meta, type: "critical", urgent: true });
 
   if (process.env.NODE_ENV === "production") {
-    // Immediate alerting for critical issues
     console.error(`💥 CRITICAL: ${message}`, meta);
   }
 };
@@ -436,7 +437,8 @@ logger.withContext = (context) => {
       logger.debug(message, { ...context, ...meta }),
     error: (message, meta = {}) =>
       logger.error(message, { ...context, ...meta }),
-    warn: (message, meta = {}) =>
+    warn: (message, meta = {}) => logger.warning(message, { ...context, meta }), // Backward compat
+    warning: (message, meta = {}) =>
       logger.warning(message, { ...context, ...meta }),
     // Include all other methods...
     performance: (operation, meta = {}) =>
@@ -458,10 +460,9 @@ logger.enrichError = (error, context = {}) => {
 
 // Metrics and statistics
 logger.getStats = () => {
-  const transport = logger.transports.find((t) => t.name === "application");
   return {
     level: logger.level,
-    transports: logger.transports.map((t) => t.name),
+    transports: logger.transports.map((t) => t.name || t.constructor.name),
     silent: logger.silent,
     metricsCount: performanceTracker.metrics.size,
   };
@@ -469,7 +470,6 @@ logger.getStats = () => {
 
 // Handle logger errors gracefully
 logger.on("error", (error) => {
-  // Fallback to console if logger fails
   console.error("📛 Logger error:", error);
 });
 
