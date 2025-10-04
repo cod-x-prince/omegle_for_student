@@ -1,3 +1,11 @@
+// Add this at the top of dashboard.js or in initializeDashboard method
+console.log("Checking for VideoManager...");
+console.log(
+  "Available scripts:",
+  Array.from(document.scripts).map((s) => s.src)
+);
+console.log("VideoManager defined:", typeof VideoManager);
+console.log("videoManager defined:", typeof videoManager); // Check lowercase too
 // Dashboard controller with enhanced pairing system
 class DashboardController {
   constructor() {
@@ -95,17 +103,58 @@ class DashboardController {
   initializeVideoElements() {
     this.logger.info("DashboardController: Initializing video elements");
 
-    this.localVideo = document.getElementById("local-video");
-    this.remoteVideo = document.getElementById("remote-video");
+    // Try multiple possible element IDs/selectors
+    this.localVideo =
+      document.getElementById("local-video") ||
+      document.querySelector("#localVideo") ||
+      document.querySelector(".local-video");
+
+    this.remoteVideo =
+      document.getElementById("remote-video") ||
+      document.querySelector("#remoteVideo") ||
+      document.querySelector(".remote-video");
 
     if (this.localVideo && this.remoteVideo) {
-      this.logger.info("DashboardController: Video elements initialized");
+      this.logger.info("DashboardController: Video elements initialized", {
+        localVideo: this.localVideo.id || this.localVideo.className,
+        remoteVideo: this.remoteVideo.id || this.remoteVideo.className,
+      });
 
       // Set initial placeholder states
       this.showVideoPlaceholders();
     } else {
-      this.logger.error("DashboardController: Video elements not found");
+      this.logger.warn(
+        "DashboardController: Video elements not found - this is normal for dashboard view",
+        {
+          localVideoFound: !!this.localVideo,
+          remoteVideoFound: !!this.remoteVideo,
+        }
+      );
+
+      // Create fallback elements if needed for dashboard preview
+      if (!this.localVideo || !this.remoteVideo) {
+        this.createFallbackVideoElements();
+      }
     }
+  }
+
+  // Add this new method for fallback video elements
+  createFallbackVideoElements() {
+    this.logger.info(
+      "DashboardController: Creating fallback video elements for dashboard"
+    );
+
+    // These will be used when the actual video chat page loads
+    this.localVideo = document.createElement("video");
+    this.remoteVideo = document.createElement("video");
+
+    this.localVideo.id = "local-video-fallback";
+    this.remoteVideo.id = "remote-video-fallback";
+    this.localVideo.style.display = "none";
+    this.remoteVideo.style.display = "none";
+
+    document.body.appendChild(this.localVideo);
+    document.body.appendChild(this.remoteVideo);
   }
 
   showVideoPlaceholders() {
@@ -484,10 +533,38 @@ class DashboardController {
     }
 
     this.isSearching = true;
-    this.currentMode = mode; // Store the current mode
+    this.currentMode = mode;
 
     // Update UI to show searching state
     this.showSearchingState(mode);
+
+    // For video chat, check if VideoManager is available (both cases)
+    if (mode === "video") {
+      const VideoManagerClass = window.VideoManager || window.videoManager;
+      if (typeof VideoManagerClass === "undefined") {
+        this.logger.error("DashboardController: VideoManager not available");
+        this.showError(
+          "Video chat is not available right now. Please try text chat or refresh the page."
+        );
+        this.cancelMatchmaking();
+        return;
+      }
+
+      try {
+        await this.initializeVideoManager();
+        this.logger.info(
+          "DashboardController: Video manager initialized successfully"
+        );
+      } catch (error) {
+        this.logger.error(
+          "DashboardController: Failed to initialize video manager",
+          error
+        );
+        this.showError("Failed to access camera. Please check permissions.");
+        this.cancelMatchmaking();
+        return;
+      }
+    }
 
     // Ensure socket is connected and ready
     if (!this.socket || !this.socket.connected) {
@@ -504,24 +581,6 @@ class DashboardController {
           this.socket.once("connect", resolve);
         }
       });
-    }
-
-    // For video chat, initialize video manager and start camera
-    if (mode === "video") {
-      try {
-        await this.initializeVideoManager();
-        this.logger.info(
-          "DashboardController: Video manager initialized successfully"
-        );
-      } catch (error) {
-        this.logger.error(
-          "DashboardController: Failed to initialize video manager",
-          error
-        );
-        this.showError("Failed to access camera. Please check permissions.");
-        this.cancelMatchmaking();
-        return;
-      }
     }
 
     // Join the pairing queue with the specified mode
@@ -553,8 +612,10 @@ class DashboardController {
     this.addActivity(`🔍 Started searching for ${mode} study partner`);
   }
 
-  async startMatchmaking() {
-    this.logger.info("DashboardController: Starting matchmaking process");
+  async startMatchmakingWithMode(mode) {
+    this.logger.info(
+      `DashboardController: Starting matchmaking for ${mode} chat`
+    );
 
     if (this.isSearching) {
       this.logger.warn("DashboardController: Already searching for partner");
@@ -562,9 +623,41 @@ class DashboardController {
     }
 
     this.isSearching = true;
+    this.currentMode = mode;
 
     // Update UI to show searching state
-    this.showSearchingState("video"); // Default to video for legacy button
+    this.showSearchingState(mode);
+
+    // For video chat, ensure VideoManager is available
+    if (mode === "video") {
+      // FIX: Check if VideoManager is available (it should be now)
+      if (typeof VideoManager === "undefined") {
+        this.logger.error("DashboardController: VideoManager not available", {
+          available: typeof VideoManager,
+          windowVideoManager: window.VideoManager,
+        });
+        this.showError(
+          "Video chat is not available right now. Please try text chat or refresh the page."
+        );
+        this.cancelMatchmaking();
+        return;
+      }
+
+      try {
+        await this.initializeVideoManager();
+        this.logger.info(
+          "DashboardController: Video manager initialized successfully"
+        );
+      } catch (error) {
+        this.logger.error(
+          "DashboardController: Failed to initialize video manager",
+          error
+        );
+        this.showError("Failed to access camera. Please check permissions.");
+        this.cancelMatchmaking();
+        return;
+      }
+    }
 
     // Ensure socket is connected and ready
     if (!this.socket || !this.socket.connected) {
@@ -583,68 +676,56 @@ class DashboardController {
       });
     }
 
-    // Initialize video manager and start camera
-    try {
-      await this.initializeVideoManager();
-      this.logger.info(
-        "DashboardController: Video manager initialized successfully"
-      );
-    } catch (error) {
-      this.logger.error(
-        "DashboardController: Failed to initialize video manager",
-        error
-      );
-      this.showError("Failed to access camera. Please check permissions.");
-      this.cancelMatchmaking();
-      return;
-    }
-
-    // Join pairing queue (legacy method)
-    this.socket.emit("pairing:join", {
-      mode: "video",
-      userData: this.authManager.getUserData(),
-    });
-
-    this.logger.info(
-      "DashboardController: Matchmaking started - ready for pairing"
-    );
+    // Join the pairing queue with the specified mode
+    this.joinPairingQueue(mode);
   }
 
   async initializeVideoManager() {
     this.logger.info("DashboardController: Initializing video manager");
 
-    try {
-      // Debug: Check if VideoManager exists and what it contains
-      this.logger.info("VideoManager check:", {
-        exists: typeof VideoManager !== "undefined",
-        type: typeof VideoManager,
-        constructor:
-          typeof VideoManager === "function" ? "function" : "not function",
-        prototype:
-          typeof VideoManager === "function" ? VideoManager.prototype : "none",
-      });
+    // Enhanced check with better logging
+    if (typeof VideoManager === "undefined") {
+      this.logger.error(
+        "DashboardController: VideoManager not available - debugging info",
+        {
+          VideoManager: typeof VideoManager,
+          windowKeys: Object.keys(window).filter(
+            (k) =>
+              k.toLowerCase().includes("video") ||
+              k.toLowerCase().includes("manager")
+          ),
+        }
+      );
+      throw new Error("VideoManager not available");
+    }
 
-      if (typeof VideoManager === "undefined") {
-        this.logger.error("DashboardController: VideoManager not found");
-        throw new Error("VideoManager not available");
+    this.logger.info(
+      "DashboardController: VideoManager class found, creating instance"
+    );
+
+    try {
+      // Ensure video elements exist
+      if (!this.localVideo || !this.remoteVideo) {
+        this.initializeVideoElements();
       }
+
+      this.logger.info("DashboardController: Creating VideoManager instance", {
+        hasSocket: !!this.socket,
+        hasLocalVideo: !!this.localVideo,
+        hasRemoteVideo: !!this.remoteVideo,
+      });
 
       this.videoManager = new VideoManager(
         this.socket,
         null, // peerId will be set when paired
         false, // initiator status will be set when paired
-        this.localVideo, // Pass video elements instead of canvases
+        this.localVideo,
         this.remoteVideo
       );
 
-      // Debug: Check the videoManager instance
-      this.logger.info("VideoManager instance created:", {
-        instance: this.videoManager,
-        hasInitialize: typeof this.videoManager.initialize === "function",
-        methods: Object.getOwnPropertyNames(
-          Object.getPrototypeOf(this.videoManager)
-        ),
-      });
+      this.logger.info(
+        "DashboardController: VideoManager instance created, calling initialize()"
+      );
 
       await this.videoManager.initialize();
       this.logger.info(
@@ -653,7 +734,11 @@ class DashboardController {
     } catch (error) {
       this.logger.error(
         "DashboardController: Video manager initialization failed",
-        error
+        {
+          error: error.message,
+          stack: error.stack,
+          videoManagerType: typeof this.videoManager,
+        }
       );
       throw error;
     }

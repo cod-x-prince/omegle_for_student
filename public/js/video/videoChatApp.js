@@ -1,3 +1,4 @@
+// videoChatApp.js - UPDATED VERSION
 class VideoChatApp {
   constructor() {
     this.socket = null;
@@ -11,6 +12,14 @@ class VideoChatApp {
 
   initializeApp() {
     console.log("VideoChatApp: Initializing application");
+
+    // Check HTTPS for camera access
+    if (location.protocol !== "https:" && location.hostname !== "localhost") {
+      this.showError(
+        "Camera access requires HTTPS. Please use a secure connection."
+      );
+      return;
+    }
 
     this.connectSocket();
     this.setupEventListeners();
@@ -52,6 +61,18 @@ class VideoChatApp {
       this.handleUserUnpaired(data);
     });
 
+    this.socket.on("video-error", (data) => {
+      this.showError(data.message);
+    });
+
+    this.socket.on("video:warning", (data) => {
+      this.showWarning(data.message);
+    });
+
+    this.socket.on("video:connected", () => {
+      this.updateStatus("Video call connected!", "connected");
+    });
+
     this.socket.on("error", (data) => {
       this.showError(data.message);
     });
@@ -80,6 +101,10 @@ class VideoChatApp {
       const localVideo = document.getElementById("localVideo");
       const remoteVideo = document.getElementById("remoteVideo");
 
+      if (!localVideo || !remoteVideo) {
+        throw new Error("Video elements not found");
+      }
+
       // Create video manager
       this.videoManager = new VideoManager(
         this.socket,
@@ -89,11 +114,16 @@ class VideoChatApp {
         remoteVideo
       );
 
-      // Initialize video
-      await this.videoManager.initialize();
+      // Initialize video with timeout
+      const initPromise = this.videoManager.initialize();
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Camera initialization timeout")),
+          10000
+        )
+      );
 
-      // Hide local video overlay
-      document.getElementById("local-overlay").style.display = "none";
+      await Promise.race([initPromise, timeoutPromise]);
 
       // Start the call
       await this.videoManager.createOffer();
@@ -103,8 +133,11 @@ class VideoChatApp {
     } catch (error) {
       console.error("VideoChatApp: Failed to initialize video call", error);
       this.showError(
-        "Failed to start video call. Text chat is still available."
+        `Video call failed: ${error.message}. Text chat is still available.`
       );
+
+      // Ensure chat still works even if video fails
+      this.enableChatInput();
     }
   }
 
@@ -424,6 +457,28 @@ class VideoChatApp {
       hour: "2-digit",
       minute: "2-digit",
     });
+  }
+  showWarning(message) {
+    const warningDiv = document.createElement("div");
+    warningDiv.style.cssText = `
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #ffc107;
+      color: #856404;
+      padding: 15px 20px;
+      border-radius: 8px;
+      z-index: 1000;
+      text-align: center;
+      max-width: 80%;
+    `;
+    warningDiv.textContent = `⚠️ ${message}`;
+    document.body.appendChild(warningDiv);
+
+    setTimeout(() => {
+      warningDiv.remove();
+    }, 5000);
   }
 }
 

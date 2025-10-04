@@ -1,3 +1,0 @@
-{"code":1,"context":{"sid":"hiHwtV32xFjgidVqAAAE"},"environment":"production","error":"Session ID unknown","level":"error","message":"Socket.IO engine connection error","service":"campusconnect-server","timestamp":"2025-10-02 21:38:06.164"}
-{"code":1,"context":{"sid":"hiHwtV32xFjgidVqAAAE"},"environment":"production","error":"Session ID unknown","level":"error","message":"Socket.IO engine connection error","service":"campusconnect-server","timestamp":"2025-10-02 21:38:09.851"}
-{"code":1,"context":{"sid":"hiHwtV32xFjgidVqAAAE"},"environment":"production","error":"Session ID unknown","level":"error","message":"Socket.IO engine connection error","service":"campusconnect-server","timestamp":"2025-10-02 21:38:09.858"}

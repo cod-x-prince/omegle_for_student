@@ -140,6 +140,38 @@
     <script src="/js/auth/authManager.js"></script>
     <script src="/js/utils/logger.js"></script>
     <script src="/js/utils/helpers.js"></script>
+
+    <!-- ADD VIDEO MANAGER SCRIPT HERE - This was missing -->
+    <script src="/js/video/videoManager.js"></script>
+
     <script src="/js/dashboard.js"></script>
+
+    <!-- Add dynamic loading fallback -->
+    <script>
+      // Fallback: Ensure VideoManager is available
+      document.addEventListener("DOMContentLoaded", function () {
+        // Check if VideoManager loaded successfully
+        setTimeout(() => {
+          if (typeof VideoManager === "undefined") {
+            console.warn(
+              "VideoManager not loaded via script tag, loading dynamically..."
+            );
+
+            // Dynamically load VideoManager
+            const script = document.createElement("script");
+            script.src = "/js/video/videoManager.js";
+            script.onload = function () {
+              console.log("VideoManager loaded dynamically");
+            };
+            script.onerror = function () {
+              console.error("Failed to load VideoManager dynamically");
+            };
+            document.head.appendChild(script);
+          } else {
+            console.log("VideoManager loaded successfully");
+          }
+        }, 100);
+      });
+    </script>
   </body>
 </html>

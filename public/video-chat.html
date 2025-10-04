@@ -5,8 +5,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CampusConnect - Video Chat</title>
     <link rel="stylesheet" href="/css/style.css" />
+    <style>
+      /* Add camera permission debugging styles */
+      .permission-debug {
+        background: #fff3cd;
+        border: 1px solid #ffeaa7;
+        border-radius: 5px;
+        padding: 15px;
+        margin: 10px 0;
+        display: none;
+      }
+      .permission-debug.visible {
+        display: block;
+      }
+      .debug-info {
+        font-family: monospace;
+        font-size: 12px;
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 3px;
+        margin-top: 10px;
+      }
+      .control-btn.small {
+        padding: 5px 10px;
+        font-size: 12px;
+      }
+    </style>
   </head>
   <body>
+    <!-- Camera Permission Debug -->
+    <div id="permissionDebug" class="permission-debug">
+      <strong>🔧 Camera Debug Info:</strong>
+      <div id="debugInfo" class="debug-info">
+        Checking camera permissions...
+      </div>
+      <button id="retryCamera" class="control-btn small">Retry Camera</button>
+    </div>
+
     <div class="video-chat-container">
       <!-- Header -->
       <div class="video-chat-header">
@@ -112,8 +147,121 @@
 
     <!-- Scripts -->
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/js/video/videoManager.js"></script>
-    <script src="/js/chat/chatManager.js"></script>
+
+    <!-- Load VideoManager FIRST -->
+    <script>
+      // Global VideoManager availability check
+      window.VideoManagerAvailable = false;
+
+      // Create a simple VideoManager loader
+      function loadVideoManager() {
+        return new Promise((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = "/js/video/videoManager.js";
+          script.onload = () => {
+            console.log("VideoManager script loaded successfully");
+            window.VideoManagerAvailable = true;
+            resolve();
+          };
+          script.onerror = () => {
+            console.error("Failed to load VideoManager script");
+            reject(new Error("VideoManager script failed to load"));
+          };
+          document.head.appendChild(script);
+        });
+      }
+    </script>
+
+    <!-- Load the main app AFTER VideoManager -->
     <script src="/js/video/videoChatApp.js"></script>
+
+    <!-- Camera Permission Debug Script -->
+    <script>
+      // Camera permission debugging
+      async function debugCameraAccess() {
+        const debugInfo = document.getElementById("debugInfo");
+        const permissionDebug = document.getElementById("permissionDebug");
+
+        try {
+          debugInfo.innerHTML = "🔍 Checking browser support...";
+
+          // Check if getUserMedia is supported
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error("getUserMedia is not supported in this browser");
+          }
+
+          debugInfo.innerHTML += "\n✅ getUserMedia is supported";
+
+          // List available devices
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevices = devices.filter(
+            (device) => device.kind === "videoinput"
+          );
+          const audioDevices = devices.filter(
+            (device) => device.kind === "audioinput"
+          );
+
+          debugInfo.innerHTML += `\n📹 Video devices: ${videoDevices.length}`;
+          debugInfo.innerHTML += `\n🎤 Audio devices: ${audioDevices.length}`;
+
+          if (videoDevices.length === 0) {
+            throw new Error("No camera found on this device");
+          }
+
+          // Test camera access with simple constraints
+          debugInfo.innerHTML += "\n🔐 Testing camera access...";
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true,
+          });
+
+          debugInfo.innerHTML += "\n✅ Camera access successful!";
+          debugInfo.innerHTML += `\n🎬 Video tracks: ${
+            stream.getVideoTracks().length
+          }`;
+          debugInfo.innerHTML += `\n🎵 Audio tracks: ${
+            stream.getAudioTracks().length
+          }`;
+
+          // Show success and hide debug panel
+          setTimeout(() => {
+            permissionDebug.classList.remove("visible");
+          }, 3000);
+
+          // Clean up test stream
+          stream.getTracks().forEach((track) => track.stop());
+
+          return true;
+        } catch (error) {
+          debugInfo.innerHTML += `\n❌ Error: ${error.message}`;
+          debugInfo.innerHTML += `\n💡 Solution: Check browser permissions and ensure you're using HTTPS`;
+          permissionDebug.classList.add("visible");
+          return false;
+        }
+      }
+
+      // Retry camera button
+      document
+        .getElementById("retryCamera")
+        ?.addEventListener("click", debugCameraAccess);
+
+      // Run debug on page load and ensure VideoManager loads
+      document.addEventListener("DOMContentLoaded", async () => {
+        console.log("VideoChat: DOM loaded, initializing...");
+
+        try {
+          // Load VideoManager first
+          await loadVideoManager();
+          console.log("VideoManager loaded successfully");
+
+          // Test camera access
+          await debugCameraAccess();
+        } catch (error) {
+          console.error("Failed to initialize VideoChat:", error);
+          document.getElementById("connectionStatus").textContent =
+            "Failed to load video components";
+        }
+      });
+    </script>
   </body>
 </html>
