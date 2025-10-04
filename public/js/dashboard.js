@@ -336,8 +336,14 @@ class DashboardController {
         connected: this.socket.connected,
       });
       this.updateConnectionStatus(true);
-    });
 
+      // AUTO-JOIN: Automatically join text chat queue after connection
+      setTimeout(() => {
+        this.logger.info("DashboardController: Auto-joining text chat queue");
+        this.startTextChat(); // This will automatically join the queue
+      }, 1000);
+    });
+    
     this.socket.on("disconnect", (reason) => {
       this.logger.info("DashboardController: Socket disconnected", {
         reason: reason,

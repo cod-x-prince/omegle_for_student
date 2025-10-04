@@ -1,16 +1,22 @@
 const path = require("path");
 const encryptionManager = require("./utils/encryption");
+
+// Load environment variables with explicit path
+require("dotenv").config({ path: path.join(__dirname, "../.env") });
+
+// Import enhanced security configuration
 const {
   sanitizeInput,
   validatePassword,
   securityHeaders,
   helmetConfig,
-  rateLimitConfig,
-  apiRateLimit,
+  setupSecurity, // NEW: Enhanced security setup function
+  authLimiter, // NEW: Individual rate limiters
+  registerLimiter,
+  apiLimiter,
+  videoChatLimiter,
+  adminLimiter,
 } = require("./config/security");
-
-// Load environment variables with explicit path
-require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
 // Debug environment with better error handling
 console.log("🚀 Starting server with ENHANCED SECURITY...");
@@ -116,6 +122,7 @@ class CampusConnectServer {
     logger.info("CampusConnectServer instance created", {
       environment: process.env.NODE_ENV || "development",
       pid: process.pid,
+      security: "enhanced",
     });
   }
 
@@ -129,11 +136,8 @@ class CampusConnectServer {
       nodeEnv: process.env.NODE_ENV,
     });
 
-    // 🔒 ENHANCED SECURITY MIDDLEWARE
-    this.app.use(helmet(helmetConfig));
-    this.app.use(securityHeaders);
-    this.app.use("/api/auth/", rateLimitConfig);
-    this.app.use("/api/", apiRateLimit);
+    // 🔒 ENHANCED SECURITY MIDDLEWARE - UPDATED
+    setupSecurity(this.app); // NEW: Use the centralized security setup function
 
     // Static files - FIXED PATH
     this.app.use(express.static(path.join(__dirname, "../public")));
@@ -209,8 +213,64 @@ class CampusConnectServer {
   setupRoutes() {
     logger.debug("Setting up enhanced security routes");
 
-    // 🔒 ENHANCED SIGNUP ROUTE WITH SECURITY
-    this.app.post("/api/auth/signup", async (req, res) => {
+    // Add this to your routes for debugging
+    this.app.get("/api/debug/queue-status", (req, res) => {
+      try {
+        const queueStatus = this.pairingManager.getDetailedQueueStatus();
+        const sockets = Array.from(this.io.sockets.sockets.values());
+
+        const connectedUsers = sockets.map((socket) => ({
+          socketId: socket.id,
+          userId: socket.userId,
+          userEmail: socket.userEmail,
+          connected: socket.connected,
+          joinedQueue: socket._joinedQueue || false, // We'll track this
+        }));
+
+        res.json({
+          queue: queueStatus,
+          connectedUsers: connectedUsers,
+          totalConnected: sockets.length,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        logger.error("Debug queue status error", error);
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    this.app.post("/api/debug/force-join/:socketId", (req, res) => {
+      try {
+        const { socketId } = req.params;
+        const socket = this.io.sockets.sockets.get(socketId);
+
+        if (!socket) {
+          return res.status(404).json({ error: "Socket not found" });
+        }
+
+        const joinData = {
+          preferences: {
+            college: "CMRIT",
+            major: "Debug",
+            interests: ["forced-join"],
+          },
+        };
+
+        socket.emit("join_queue", joinData);
+
+        res.json({
+          message: "Join queue forced",
+          socketId: socketId,
+          userId: socket.userId,
+        });
+      } catch (error) {
+        logger.error("Force join error", error);
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // 🔒 ENHANCED SIGNUP ROUTE WITH NEW RATE LIMITING
+    this.app.post("/api/auth/signup", registerLimiter, async (req, res) => {
       const requestId = encryptionManager.generateSecureToken(16);
 
       try {
@@ -429,8 +489,8 @@ class CampusConnectServer {
       }
     });
 
-    // 🔒 ENHANCED LOGIN ROUTE WITH SECURITY
-    this.app.post("/api/auth/login", async (req, res) => {
+    // 🔒 ENHANCED LOGIN ROUTE WITH NEW RATE LIMITING
+    this.app.post("/api/auth/login", authLimiter, async (req, res) => {
       const requestId = encryptionManager.generateSecureToken(16);
 
       try {
@@ -616,8 +676,8 @@ class CampusConnectServer {
       res.sendFile(path.join(__dirname, "../public/js/admin-dashboard.js"));
     });
 
-    // Real-time metrics streaming for dashboard - ENHANCED
-    this.app.get("/api/admin/metrics/stream", (req, res) => {
+    // Admin routes with admin rate limiting
+    this.app.get("/api/admin/metrics/stream", adminLimiter, (req, res) => {
       // Security check for admin endpoints
       this.healthMonitor.trackSecurityEvent("admin_metrics_access", {
         ip: req.ip,
@@ -1305,6 +1365,20 @@ class CampusConnectServer {
         ip: socket.handshake.address,
       });
 
+      // DEBUG: Log all socket events
+      const originalEmit = socket.emit;
+      socket.emit = function (event, data) {
+        if (event !== "signal") {
+          // Don't log frequent signal events
+          logger.debug(`🔵 SOCKET EMIT: ${event}`, {
+            socketId: socket.id,
+            userId: socket.userId,
+            data: event === "chat_message" ? { ...data, message: "***" } : data,
+          });
+        }
+        return originalEmit.apply(this, arguments);
+      };
+
       // Track connection in health monitor
       this.healthMonitor.trackConnection(socket.id, {
         userId: socket.userId,
@@ -1314,6 +1388,28 @@ class CampusConnectServer {
         sessionId: socket.sessionId,
         connectionId: connectionId,
       });
+
+      // AUTO-JOIN DEBUG: Add automatic queue join after 2 seconds
+      setTimeout(() => {
+        if (socket.connected) {
+          logger.info("🟡 AUTO-JOIN: Attempting to auto-join queue", {
+            socketId: socket.id,
+            userId: socket.userId,
+          });
+
+          // Simulate a user joining the queue
+          const joinData = {
+            preferences: {
+              college: "CMRIT",
+              major: "Computer Science",
+              interests: ["debugging", "testing"],
+            },
+          };
+
+          logger.info("🟡 AUTO-JOIN: Emitting join_queue event", joinData);
+          socket.emit("join_queue", joinData);
+        }
+      }, 2000);
 
       // Enhanced error handling
       socket.on("error", (error) => {
