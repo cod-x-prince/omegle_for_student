@@ -74,6 +74,37 @@ class VideoManager {
 
     this.connectionState = "new";
     this.iceConnectionState = "new";
+    // E2E Encryption properties
+    this.encryptionManager = require("./utils/advancedEncryption");
+    this.sessionKey = null;
+    this.peerPublicKey = null;
+    this.encryptionEnabled = false;
+
+    // Key exchange state
+    this.keyExchangeComplete = false;
+    this.pendingKeyExchange = new Map();
+  }
+
+  // Initialize E2E encryption
+  async initializeEncryption() {
+    try {
+      // Generate key pair for this session
+      const keyPair = this.encryptionManager.generateKeyPair();
+      this.privateKey = keyPair.privateKey;
+      this.publicKey = keyPair.publicKey;
+
+      // Generate session key
+      this.sessionKey = this.encryptionManager.generateSessionKey();
+
+      console.log("VideoManager: E2E encryption initialized");
+      return true;
+    } catch (error) {
+      console.error(
+        "VideoManager: E2E encryption initialization failed",
+        error
+      );
+      return false;
+    }
   }
 
   async initialize() {

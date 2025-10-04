@@ -4629,3 +4629,323 @@ td {
     opacity: 1;
   }
 }
+/* Security Badges */
+.security-badge {
+  background: var(--accent-secondary);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.security-badge-card {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: var(--success-color);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 0.7rem;
+}
+
+/* Security Banner */
+.security-banner {
+  background: linear-gradient(
+    135deg,
+    var(--accent-color),
+    var(--accent-secondary)
+  );
+  color: white;
+  padding: 12px 20px;
+  border-radius: 12px;
+  margin: 20px 0;
+  text-align: center;
+}
+
+.banner-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.banner-icon {
+  font-size: 1.2rem;
+}
+
+/* Modals */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 16px;
+  padding: 0;
+  max-width: 500px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.security-modal,
+.mfa-modal {
+  max-width: 600px;
+}
+
+.modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  flex: 1;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--text-light);
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+/* Security Sections */
+.security-section {
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+.security-section h4 {
+  margin: 0 0 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.security-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.status-badge {
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.status-badge.enabled {
+  background: var(--success-color);
+  color: white;
+}
+
+.status-badge.disabled {
+  background: var(--error-color);
+  color: white;
+}
+
+.security-description {
+  color: var(--text-light);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+/* MFA Setup */
+.mfa-step {
+  text-align: center;
+}
+
+.qrcode-container {
+  margin: 20px 0;
+  display: flex;
+  justify-content: center;
+}
+
+.qrcode-container img {
+  max-width: 200px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.codes-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.codes-list div {
+  background: var(--bg-secondary);
+  padding: 8px;
+  border-radius: 6px;
+  font-family: monospace;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+/* Security Level */
+.security-level {
+  margin-top: 12px;
+}
+
+.level-indicator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.level-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.level-fill {
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    var(--error-color),
+    var(--warning),
+    var(--success-color)
+  );
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.level-text {
+  font-size: 0.9rem;
+  font-weight: 500;
+  min-width: 120px;
+}
+
+/* Encryption Section */
+.encryption-section {
+  margin-top: 30px;
+}
+
+.encryption-status {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+}
+
+.encryption-icon {
+  font-size: 2rem;
+}
+
+.encryption-info {
+  flex: 1;
+}
+
+.encryption-info h4 {
+  margin: 0 0 4px 0;
+}
+
+.encryption-info p {
+  margin: 0;
+  color: var(--text-light);
+}
+
+.encryption-badge {
+  padding: 6px 12px;
+  background: var(--success-color);
+  color: white;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+/* Security Activity Items */
+.security-activity {
+  border-left: 3px solid var(--success-color);
+}
+
+/* MFA Options */
+.mfa-options {
+  text-align: center;
+  margin: 16px 0;
+}
+
+.text-btn {
+  background: none;
+  border: none;
+  color: var(--accent-color);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.text-btn:hover {
+  color: var(--accent-secondary);
+}
+
+/* Security Features List */
+.security-features {
+  margin-top: 20px;
+}
+
+.security-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.security-icon {
+  font-size: 1.2rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .security-status {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .encryption-status {
+    flex-direction: column;
+    text-align: center;
+    gap: 12px;
+  }
+
+  .codes-list {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-content {
+    width: 95%;
+    margin: 10px;
+  }
+}

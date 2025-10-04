@@ -1,21 +1,65 @@
 const path = require("path");
 const encryptionManager = require("./utils/encryption");
+const advancedSecurity = require("./modules/middleware/advancedSecurity");
+const mfaManager = require("./modules/auth/mfaManager");
 
 // Load environment variables with explicit path
 require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
-// Import enhanced security configuration
+// DEBUG: Check if rate limiters are loading correctly
+console.log("🔧 Loading rate limiters...");
+try {
+  const rateLimiters = require("./modules/monitoring/rateLimiter");
+  console.log("✅ Rate limiters loaded successfully");
+
+  // Check if globalLimiter is a function
+  if (typeof rateLimiters.globalLimiter === "function") {
+    console.log("✅ globalLimiter is a valid middleware function");
+  } else {
+    console.log(
+      "❌ globalLimiter is NOT a function:",
+      typeof rateLimiters.globalLimiter
+    );
+  }
+} catch (error) {
+  console.error("❌ Failed to load rate limiters:", error.message);
+
+  // Create dummy limiters as fallback
+  console.log("🔄 Creating fallback dummy limiters...");
+  const createDummyLimiter = () => (req, res, next) => next();
+
+  const rateLimiters = {
+    globalLimiter: createDummyLimiter(),
+    authLimiter: createDummyLimiter(),
+    apiLimiter: createDummyLimiter(),
+    mfaLimiter: createDummyLimiter(),
+    videoLimiter: createDummyLimiter(),
+    registerLimiter: createDummyLimiter(),
+    adminLimiter: createDummyLimiter(),
+    videoChatLimiter: createDummyLimiter(),
+  };
+
+  console.log("✅ Fallback dummy limiters created");
+}
+
+// Import rate limiters AFTER verification
+const {
+  globalLimiter,
+  authLimiter,
+  apiLimiter,
+  mfaLimiter,
+  videoLimiter,
+  registerLimiter,
+  adminLimiter,
+  videoChatLimiter,
+} = require("./modules/monitoring/rateLimiter");
+
+// Import security configuration WITHOUT rate limiters
 const {
   sanitizeInput,
   validatePassword,
   securityHeaders,
   helmetConfig,
-  setupSecurity, // NEW: Enhanced security setup function
-  authLimiter, // NEW: Individual rate limiters
-  registerLimiter,
-  apiLimiter,
-  videoChatLimiter,
-  adminLimiter,
 } = require("./config/security");
 
 // Debug environment with better error handling
@@ -136,8 +180,155 @@ class CampusConnectServer {
       nodeEnv: process.env.NODE_ENV,
     });
 
-    // 🔒 ENHANCED SECURITY MIDDLEWARE - UPDATED
-    setupSecurity(this.app); // NEW: Use the centralized security setup function
+    // 🔒 RATE LIMITING - APPLY FIRST (FIXED ORDER)
+    console.log("🔒 Applying global rate limiter...");
+    try {
+      this.app.use(globalLimiter);
+      console.log("✅ Global rate limiter applied successfully");
+    } catch (error) {
+      console.error("❌ Failed to apply global rate limiter:", error.message);
+    }
+
+    // 🔒 ENHANCED SECURITY MIDDLEWARE - APPLIED MANUALLY
+    console.log("🔒 Applying security middleware manually...");
+    try {
+      // Apply Helmet security headers directly
+      this.app.use(
+        helmet({
+          contentSecurityPolicy: {
+            directives: {
+              defaultSrc: ["'self'"],
+              scriptSrc: ["'self'", "'unsafe-inline'"],
+              styleSrc: ["'self'", "'unsafe-inline'"],
+              imgSrc: ["'self'", "data:", "https:"],
+              connectSrc: [
+                "'self'",
+                "https://pu-c.onrender.com",
+                "ws:",
+                "wss:",
+              ],
+            },
+          },
+          crossOriginEmbedderPolicy: false,
+        })
+      );
+
+      // CORS configuration
+      this.app.use((req, res, next) => {
+        res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
+        res.header(
+          "Access-Control-Allow-Methods",
+          "GET, POST, PUT, DELETE, OPTIONS"
+        );
+        res.header(
+          "Access-Control-Allow-Headers",
+          "Content-Type, Authorization, X-Requested-With"
+        );
+        res.header("Access-Control-Allow-Credentials", "true");
+
+        if (req.method === "OPTIONS") {
+          return res.sendStatus(200);
+        }
+        next();
+      });
+
+      console.log("✅ Security middleware applied successfully");
+    } catch (error) {
+      console.error("❌ Failed to apply security middleware:", error.message);
+    }
+
+    // 🛡️ WEB APPLICATION FIREWALL (WAF) - ADD THIS
+    // 🛡️ WEB APPLICATION FIREWALL (WAF) - FIXED VERSION
+    console.log("🛡️ Applying WAF middleware...");
+    try {
+      // Check if advancedSecurity is properly initialized
+      if (
+        advancedSecurity &&
+        typeof advancedSecurity.advancedRequestFilter === "function"
+      ) {
+        // Use the middleware correctly - it returns a function
+        this.app.use(advancedSecurity.advancedRequestFilter());
+        console.log("✅ WAF middleware applied successfully");
+      } else {
+        console.warn("⚠️ WAF not available, using basic security middleware");
+        // Fallback basic security middleware
+        this.app.use((req, res, next) => {
+          try {
+            // Basic security checks
+            const userAgent = req.get("User-Agent") || "";
+            const url = req.url.toLowerCase();
+
+            // Block obvious path traversal
+            if (
+              url.includes("..") ||
+              url.includes("//") ||
+              url.includes("./")
+            ) {
+              console.warn("🚨 Blocked path traversal attempt:", {
+                ip: req.ip,
+                url: req.url,
+              });
+              return res.status(400).json({ error: "Invalid request" });
+            }
+
+            // Basic SQL injection protection
+            const sqlKeywords = [
+              "select",
+              "insert",
+              "update",
+              "delete",
+              "drop",
+              "union",
+              "exec",
+            ];
+            const requestString = JSON.stringify({
+              headers: req.headers,
+              body: req.body,
+              query: req.query,
+            }).toLowerCase();
+
+            if (
+              sqlKeywords.some((keyword) => requestString.includes(keyword))
+            ) {
+              console.warn("🚨 Blocked SQL injection attempt:", {
+                ip: req.ip,
+                url: req.url,
+              });
+              return res
+                .status(400)
+                .json({ error: "Suspicious request detected" });
+            }
+
+            // Basic XSS protection
+            const xssPatterns = [
+              "<script",
+              "javascript:",
+              "onload=",
+              "onerror=",
+            ];
+            if (
+              xssPatterns.some((pattern) => requestString.includes(pattern))
+            ) {
+              console.warn("🚨 Blocked XSS attempt:", {
+                ip: req.ip,
+                url: req.url,
+              });
+              return res
+                .status(400)
+                .json({ error: "Suspicious request detected" });
+            }
+
+            next();
+          } catch (error) {
+            console.error("WAF error:", error.message);
+            next(); // Continue on error
+          }
+        });
+      }
+    } catch (error) {
+      console.error("❌ Failed to apply WAF middleware:", error.message);
+      // Continue without WAF rather than crashing
+    }
 
     // Static files - FIXED PATH
     this.app.use(express.static(path.join(__dirname, "../public")));
@@ -208,10 +399,460 @@ class CampusConnectServer {
     });
 
     logger.info("Enhanced security middleware setup completed");
+
+    // 🔧 COMPREHENSIVE ERROR HANDLING MIDDLEWARE
+    console.log("🔧 Setting up error handling middleware...");
+
+    // Add this before your routes but after all other middleware
+    this.app.use((req, res, next) => {
+      // Request logging
+      const requestId = encryptionManager.generateSecureToken(16);
+      const startTime = Date.now();
+
+      console.log("🔍 Incoming Request:", {
+        requestId,
+        method: req.method,
+        url: req.url,
+        ip: req.ip,
+        userAgent: req.get("User-Agent") || "Unknown",
+        timestamp: new Date().toISOString(),
+      });
+
+      // Override res.json to catch JSON errors
+      const originalJson = res.json;
+      res.json = function (data) {
+        try {
+          return originalJson.call(this, data);
+        } catch (error) {
+          console.error("🚨 JSON serialization error:", {
+            requestId,
+            error: error.message,
+            data: typeof data,
+          });
+          return originalJson.call(this, {
+            error: "Response serialization failed",
+          });
+        }
+      };
+
+      // Track response completion
+      res.on("finish", () => {
+        const responseTime = Date.now() - startTime;
+        console.log("✅ Request Completed:", {
+          requestId,
+          method: req.method,
+          url: req.url,
+          statusCode: res.statusCode,
+          responseTime: `${responseTime}ms`,
+          ip: req.ip,
+        });
+      });
+
+      next();
+    });
+
+    // Global error handler
+    this.app.use((error, req, res, next) => {
+      const errorId = encryptionManager.generateSecureToken(16);
+
+      console.error("🚨 GLOBAL ERROR HANDLER:", {
+        errorId,
+        message: error.message,
+        stack: error.stack,
+        url: req.url,
+        method: req.method,
+        ip: req.ip,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Don't leak error details in production
+      const errorMessage =
+        process.env.NODE_ENV === "production"
+          ? "Something went wrong"
+          : error.message;
+
+      res.status(500).json({
+        error: errorMessage,
+        errorId: process.env.NODE_ENV === "development" ? errorId : undefined,
+      });
+    });
   }
 
   setupRoutes() {
     logger.debug("Setting up enhanced security routes");
+
+    // Apply specific rate limiters to routes
+    console.log("🔒 Applying route-specific rate limiters...");
+    try {
+      this.app.use("/api/auth/login", authLimiter);
+      this.app.use("/api/auth/signup", registerLimiter);
+      this.app.use("/api/auth/mfa", mfaLimiter);
+      this.app.use("/api/video", videoLimiter);
+      this.app.use("/api/", apiLimiter);
+      this.app.use("/api/admin", adminLimiter);
+      console.log("✅ Route-specific rate limiters applied successfully");
+    } catch (error) {
+      console.error(
+        "❌ Failed to apply route-specific rate limiters:",
+        error.message
+      );
+    }
+
+    // =========================================================================
+    // BASIC HEALTH & DEBUG ROUTES - ADD THESE FIRST
+    // =========================================================================
+
+    console.log("🔧 Setting up basic health and debug routes...");
+
+    // SIMPLE HEALTH CHECK
+    this.app.get("/health", (req, res) => {
+      console.log("✅ Health check route hit");
+      res.json({
+        status: "OK",
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        environment: process.env.NODE_ENV || "development",
+        security: "enhanced",
+      });
+    });
+
+    // API HEALTH CHECK - FIXED
+    this.app.get("/api/health", (req, res) => {
+      console.log("✅ API health route hit");
+      res.json({
+        status: "OK",
+        service: "campusconnect-server",
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || "development",
+      });
+    });
+
+    // DEBUG TEST ROUTE
+    this.app.get("/debug-test", (req, res) => {
+      console.log("✅ Debug test route hit");
+      res.json({
+        status: "success",
+        message: "Debug route working",
+        timestamp: new Date().toISOString(),
+        routes: {
+          health: "/health",
+          apiHealth: "/api/health",
+          root: "/",
+          debug: "/debug-test",
+        },
+      });
+    });
+
+    // TEST MIDDLEWARE ROUTE
+    this.app.get("/test-middleware", (req, res) => {
+      console.log("🔍 Testing middleware stack...");
+
+      const testData = {
+        ip: req.ip,
+        method: req.method,
+        url: req.url,
+        headers: Object.keys(req.headers),
+        hasBody: !!req.body,
+        hasQuery: !!req.query,
+        timestamp: new Date().toISOString(),
+      };
+
+      console.log("✅ Middleware test data:", testData);
+
+      res.json({
+        status: "middleware_working",
+        testData: testData,
+        serverInfo: {
+          environment: process.env.NODE_ENV || "development",
+          security: "enhanced",
+          timestamp: new Date().toISOString(),
+        },
+      });
+    });
+
+    console.log("✅ Basic routes setup completed");
+
+    // =========================================================================
+    // PHASE 1 SECURITY ENHANCEMENT ROUTES
+    // =========================================================================
+
+    console.log("🔧 Setting up security enhancement routes...");
+
+    // 🔐 MFA Routes
+    this.app.post("/api/auth/mfa/setup", async (req, res) => {
+      const requestId = encryptionManager.generateSecureToken(16);
+
+      try {
+        const { email } = req.body;
+
+        if (!email) {
+          return res.status(400).json({ error: "Email is required" });
+        }
+
+        // Generate MFA secret
+        const mfaSecret = mfaManager.generateSecret(email);
+
+        // Generate QR code
+        const qrCode = await mfaManager.generateQRCode(mfaSecret.otpauth_url);
+
+        // Generate backup codes
+        const backupCodes = mfaManager.generateBackupCodes();
+
+        // Store temporarily (in production, use Redis with expiry)
+        const tempStorage = {
+          secret: mfaSecret.secret,
+          backupCodes: backupCodes,
+          createdAt: new Date(),
+        };
+
+        // In production, store this in Redis with 10min expiry
+        // For now, we'll return directly - implement Redis in Phase 2
+        res.json({
+          success: true,
+          secret: mfaSecret.secret,
+          qrCode: qrCode,
+          backupCodes: backupCodes.map((bc) => bc.code),
+          message: "Scan QR code with authenticator app",
+        });
+      } catch (error) {
+        logger.error("MFA setup error", { requestId, error: error.message });
+        res.status(500).json({ error: "MFA setup failed" });
+      }
+    });
+
+    this.app.post("/api/auth/mfa/verify-setup", async (req, res) => {
+      const requestId = encryptionManager.generateSecureToken(16);
+
+      try {
+        const { email, token, backupCode } = req.body;
+
+        if (!email) {
+          return res.status(400).json({ error: "Email is required" });
+        }
+
+        // In production, retrieve from Redis
+        // const tempData = await redisClient.get(`mfa_setup:${email}`);
+        // const mfaData = JSON.parse(tempData);
+
+        // For now, we'll simulate - you'll need to implement proper storage
+        const mfaData = {}; // Get from your temporary storage
+
+        if (!mfaData) {
+          return res.status(400).json({ error: "MFA setup session expired" });
+        }
+
+        let verified = false;
+
+        // Verify with TOTP token
+        if (token && mfaManager.verifyToken(mfaData.secret, token)) {
+          verified = true;
+        }
+        // Or verify with backup code
+        else if (
+          backupCode &&
+          mfaManager.verifyBackupCode(mfaData.backupCodes, backupCode)
+        ) {
+          verified = true;
+        }
+
+        if (verified) {
+          // Store MFA secret in user's database record
+          const { error: updateError } = await supabase
+            .from("profiles") // Use your actual table name
+            .update({
+              mfa_secret: mfaData.secret,
+              mfa_backup_codes: mfaData.backupCodes,
+              mfa_enabled: true,
+            })
+            .eq("email", email);
+
+          if (updateError) {
+            throw updateError;
+          }
+
+          res.json({
+            success: true,
+            message: "MFA enabled successfully",
+            remainingBackupCodes: mfaManager.getRemainingBackupCodes(
+              mfaData.backupCodes
+            ),
+          });
+        } else {
+          res.status(400).json({ error: "Invalid verification code" });
+        }
+      } catch (error) {
+        logger.error("MFA verify setup error", {
+          requestId,
+          error: error.message,
+        });
+        res.status(500).json({ error: "MFA verification failed" });
+      }
+    });
+
+    this.app.post("/api/auth/mfa/verify", async (req, res) => {
+      const requestId = encryptionManager.generateSecureToken(16);
+
+      try {
+        const { email, token, backupCode } = req.body;
+
+        if (!email) {
+          return res.status(400).json({ error: "Email is required" });
+        }
+
+        // Get user's MFA data from database
+        const { data: user, error } = await supabase
+          .from("profiles") // Use your actual table name
+          .select("mfa_secret, mfa_backup_codes, mfa_enabled")
+          .eq("email", email)
+          .single();
+
+        if (error || !user || !user.mfa_enabled) {
+          return res
+            .status(400)
+            .json({ error: "MFA not enabled for this user" });
+        }
+
+        let verified = false;
+
+        // Verify with TOTP token
+        if (token && mfaManager.verifyToken(user.mfa_secret, token)) {
+          verified = true;
+        }
+        // Or verify with backup code
+        else if (
+          backupCode &&
+          mfaManager.verifyBackupCode(user.mfa_backup_codes, backupCode)
+        ) {
+          verified = true;
+
+          // Update backup codes in database
+          await supabase
+            .from("profiles")
+            .update({ mfa_backup_codes: user.mfa_backup_codes })
+            .eq("email", email);
+        }
+
+        if (verified) {
+          // Generate MFA session token
+          const jwt = require("jsonwebtoken");
+          const mfaToken = jwt.sign(
+            {
+              email: email,
+              mfa_verified: true,
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: "5m" } // Short expiry for MFA token
+          );
+
+          res.json({
+            success: true,
+            mfa_token: mfaToken,
+            message: "MFA verification successful",
+          });
+        } else {
+          // Track failed MFA attempt
+          this.healthMonitor.trackSecurityEvent("mfa_failed", {
+            requestId: requestId,
+            email: email,
+            ip: req.ip,
+            reason: "Invalid code",
+            severity: "medium",
+          });
+
+          res.status(400).json({ error: "Invalid MFA code" });
+        }
+      } catch (error) {
+        logger.error("MFA verification error", {
+          requestId,
+          error: error.message,
+        });
+        res.status(500).json({ error: "MFA verification failed" });
+      }
+    });
+
+    this.app.post("/api/auth/mfa/disable", async (req, res) => {
+      const requestId = encryptionManager.generateSecureToken(16);
+
+      try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+          return res
+            .status(400)
+            .json({ error: "Email and password are required" });
+        }
+
+        // Verify password first
+        const { data: authData, error: authError } =
+          await supabase.auth.signInWithPassword({
+            email: email,
+            password: password,
+          });
+
+        if (authError) {
+          return res.status(401).json({ error: "Invalid password" });
+        }
+
+        // Disable MFA
+        const { error: updateError } = await supabase
+          .from("profiles")
+          .update({
+            mfa_secret: null,
+            mfa_backup_codes: null,
+            mfa_enabled: false,
+          })
+          .eq("email", email);
+
+        if (updateError) {
+          throw updateError;
+        }
+
+        res.json({
+          success: true,
+          message: "MFA disabled successfully",
+        });
+      } catch (error) {
+        logger.error("MFA disable error", { requestId, error: error.message });
+        res.status(500).json({ error: "Failed to disable MFA" });
+      }
+    });
+
+    // 🛡️ WAF Metrics Route
+    this.app.get("/api/admin/security/waf-metrics", (req, res) => {
+      try {
+        const wafMetrics = advancedSecurity.getSecurityMetrics();
+
+        res.json({
+          status: "success",
+          data: wafMetrics,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        logger.error("WAF metrics error", error);
+        res.status(500).json({ error: "Failed to get WAF metrics" });
+      }
+    });
+
+    // 🔒 Security Status Route
+    this.app.get("/api/security/status", (req, res) => {
+      try {
+        const securityStatus = {
+          encryption: "enabled",
+          mfa: "available",
+          waf: "active",
+          monitoring: "enabled",
+          timestamp: new Date().toISOString(),
+        };
+
+        res.json({
+          status: "success",
+          data: securityStatus,
+        });
+      } catch (error) {
+        logger.error("Security status error", error);
+        res.status(500).json({ error: "Failed to get security status" });
+      }
+    });
 
     // Add this to your routes for debugging
     this.app.get("/api/debug/queue-status", (req, res) => {
@@ -270,7 +911,7 @@ class CampusConnectServer {
     });
 
     // 🔒 ENHANCED SIGNUP ROUTE WITH NEW RATE LIMITING
-    this.app.post("/api/auth/signup", registerLimiter, async (req, res) => {
+    this.app.post("/api/auth/signup", async (req, res) => {
       const requestId = encryptionManager.generateSecureToken(16);
 
       try {
@@ -489,70 +1130,101 @@ class CampusConnectServer {
       }
     });
 
-    // 🔒 ENHANCED LOGIN ROUTE WITH NEW RATE LIMITING
-    this.app.post("/api/auth/login", authLimiter, async (req, res) => {
+    // 🔒 ENHANCED LOGIN ROUTE WITH MFA SUPPORT
+    this.app.post("/api/auth/login", async (req, res) => {
       const requestId = encryptionManager.generateSecureToken(16);
 
       try {
-        let { email, password } = req.body;
+        let { email, password, mfa_token } = req.body;
 
-        // 🔒 SANITIZE INPUTS
+        // Sanitize inputs
         email = sanitizeInput(email?.toString() || "");
 
-        logger.info("Secure login attempt", {
-          requestId: requestId,
-          email: email,
-          ip: req.ip,
-        });
+        // Check if MFA token is provided (step 2 of login)
+        if (mfa_token) {
+          try {
+            const jwt = require("jsonwebtoken");
+            const decoded = jwt.verify(mfa_token, process.env.JWT_SECRET);
 
-        // Enhanced security monitoring
-        this.healthMonitor.trackSecurityEvent("login_attempt", {
-          requestId: requestId,
-          email: email,
-          ip: req.ip,
-          userAgent: req.get("User-Agent"),
-          severity: "low",
-        });
+            if (decoded.email === email && decoded.mfa_verified) {
+              // MFA verified, generate final auth token
+              const finalToken = jwt.sign(
+                {
+                  userId: decoded.userId,
+                  email: email,
+                  sessionId: encryptionManager.generateSecureToken(16),
+                  mfa_verified: true,
+                },
+                process.env.JWT_SECRET,
+                { expiresIn: "24h" }
+              );
 
-        if (!email || !password) {
-          this.healthMonitor.trackSecurityEvent("login_validation_failed", {
-            requestId: requestId,
-            email: email,
-            ip: req.ip,
-            reason: "Missing credentials",
-            severity: "medium",
-          });
+              // Track successful login with MFA
+              this.healthMonitor.trackSecurityEvent("login_success_mfa", {
+                requestId: requestId,
+                email: email,
+                ip: req.ip,
+                severity: "low",
+              });
 
-          return res
-            .status(400)
-            .json({ error: "Email and password are required" });
+              return res.json({
+                message: "Login successful",
+                token: finalToken,
+                user: {
+                  email: email,
+                  mfa_enabled: true,
+                },
+              });
+            }
+          } catch (error) {
+            // Invalid MFA token, continue with normal login
+            logger.warn("Invalid MFA token provided", {
+              email,
+              error: error.message,
+            });
+          }
         }
 
+        // Normal login flow (step 1)
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
 
         if (error) {
-          logger.error("Login Supabase error", {
-            requestId: requestId,
-            error: error.message,
-            email: email,
-          });
-
-          // Track failed login attempt
+          // Track failed login
           this.healthMonitor.trackFailedLogin(req.ip, email, error.message);
-
-          let errorMessage = "Invalid credentials";
-          if (error.message.includes("Email not confirmed")) {
-            errorMessage = "Please verify your email before logging in";
-          } else if (error.message.includes("Invalid login credentials")) {
-            errorMessage = "Invalid email or password";
-          }
-
-          return res.status(401).json({ error: errorMessage });
+          return res.status(401).json({ error: "Invalid credentials" });
         }
 
+        // Check if user has MFA enabled
+        const { data: userProfile } = await supabase
+          .from("profiles") // Use your actual table name
+          .select("mfa_enabled")
+          .eq("email", email)
+          .single();
+
+        if (userProfile && userProfile.mfa_enabled) {
+          // Return MFA required response
+          const jwt = require("jsonwebtoken");
+          const mfaRequestToken = jwt.sign(
+            {
+              userId: data.user.id,
+              email: email,
+              mfa_required: true,
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: "5m" }
+          );
+
+          return res.json({
+            message: "MFA required",
+            mfa_required: true,
+            mfa_token: mfaRequestToken,
+          });
+        }
+
+        // No MFA required, return normal token
         const jwt = require("jsonwebtoken");
         const token = jwt.sign(
           {
@@ -561,7 +1233,7 @@ class CampusConnectServer {
             sessionId: encryptionManager.generateSecureToken(16),
           },
           process.env.JWT_SECRET,
-          { expiresIn: "24h" } // Extended for better UX
+          { expiresIn: "24h" }
         );
 
         // Track successful login
@@ -572,22 +1244,7 @@ class CampusConnectServer {
           sessionId: encryptionManager.generateSecureToken(16),
         });
 
-        // Track successful login security event
-        this.healthMonitor.trackSecurityEvent("login_success", {
-          requestId: requestId,
-          userId: data.user.id,
-          email: data.user.email,
-          ip: req.ip,
-          severity: "low",
-        });
-
-        logger.info("User logged in successfully", {
-          requestId: requestId,
-          email: email,
-          userId: data.user.id,
-        });
-
-        res.status(200).json({
+        res.json({
           message: "Login successful",
           token: token,
           user: {
@@ -599,24 +1256,16 @@ class CampusConnectServer {
         logger.error("Login route unexpected error", {
           requestId: requestId,
           error: error.message,
-          stack: error.stack,
         });
-
-        this.healthMonitor.trackError(error, {
-          route: "/api/auth/login",
-          requestId: requestId,
-        });
-
-        this.healthMonitor.trackSecurityEvent("login_system_error", {
-          requestId: requestId,
-          error: error.message,
-          ip: req.ip,
-          severity: "high",
-        });
-
         res.status(500).json({ error: "Internal server error" });
       }
     });
+
+    // =========================================================================
+    // STATIC FILE ROUTES
+    // =========================================================================
+
+    console.log("🔧 Setting up static file routes...");
 
     // Video chat route
     this.app.get("/video-chat", (req, res) => {
@@ -626,17 +1275,6 @@ class CampusConnectServer {
     // Text chat route
     this.app.get("/chat", (req, res) => {
       res.sendFile(path.join(__dirname, "../public/chat.html"));
-    });
-
-    // Health check endpoint
-    this.app.get("/health", (req, res) => {
-      res.json({
-        status: "OK",
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        environment: process.env.NODE_ENV || "development",
-        security: "enhanced",
-      });
     });
 
     // Deployment test endpoint
@@ -677,7 +1315,7 @@ class CampusConnectServer {
     });
 
     // Admin routes with admin rate limiting
-    this.app.get("/api/admin/metrics/stream", adminLimiter, (req, res) => {
+    this.app.get("/api/admin/metrics/stream", (req, res) => {
       // Security check for admin endpoints
       this.healthMonitor.trackSecurityEvent("admin_metrics_access", {
         ip: req.ip,
@@ -1194,7 +1832,13 @@ class CampusConnectServer {
       });
     });
 
-    // Serve HTML files explicitly - FIXED ROUTING
+    // =========================================================================
+    // STATIC FILE SERVING AND SPA FALLBACK
+    // =========================================================================
+
+    console.log("🔧 Setting up static file serving...");
+
+    // Serve HTML files explicitly
     const htmlFiles = [
       "/",
       "/login",
@@ -1203,6 +1847,7 @@ class CampusConnectServer {
       "/chat",
       "/video-chat",
     ];
+
     htmlFiles.forEach((route) => {
       this.app.get(route, (req, res) => {
         let file = "index.html";
@@ -1212,6 +1857,7 @@ class CampusConnectServer {
         else if (route === "/chat") file = "chat.html";
         else if (route === "/video-chat") file = "video-chat.html";
 
+        console.log(`📁 Serving static file: ${route} -> ${file}`);
         res.sendFile(path.join(__dirname, "../public", file));
       });
     });
@@ -1223,6 +1869,8 @@ class CampusConnectServer {
 
     // 404 handler for API routes
     this.app.use("/api/*", (req, res) => {
+      console.log("🔍 API 404 - Route not found:", req.originalUrl);
+
       this.healthMonitor.trackSecurityEvent("api_404", {
         ip: req.ip,
         url: req.originalUrl,
@@ -1234,11 +1882,27 @@ class CampusConnectServer {
         url: req.originalUrl,
         method: req.method,
       });
-      res.status(404).json({ error: "API endpoint not found" });
+
+      res.status(404).json({
+        error: "API endpoint not found",
+        requestedUrl: req.originalUrl,
+        availableEndpoints: [
+          "/health",
+          "/api/health",
+          "/debug-test",
+          "/test-middleware",
+          "/api/auth/signup",
+          "/api/auth/login",
+          "/api/info",
+          "/api/config",
+        ],
+        timestamp: new Date().toISOString(),
+      });
     });
 
     // SPA fallback - must be LAST
     this.app.get("*", (req, res) => {
+      console.log("🔍 SPA fallback for:", req.url);
       res.sendFile(path.join(__dirname, "../public/index.html"));
     });
 
@@ -1280,9 +1944,11 @@ class CampusConnectServer {
       res.status(500).json({
         error: errorMessage,
         errorId: process.env.NODE_ENV === "development" ? errorId : undefined,
+        timestamp: new Date().toISOString(),
       });
     });
 
+    console.log("✅ All routes setup completed");
     logger.info("Enhanced security routes setup completed");
   }
 

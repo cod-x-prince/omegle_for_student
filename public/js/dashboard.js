@@ -321,6 +321,51 @@ class DashboardController {
     }
   }
 
+  // Add to DashboardController class
+  async initializeMFASetup() {
+    try {
+      const userData = this.authManager.getUserData();
+      const response = await fetch("/api/auth/mfa/setup", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.authManager.getToken()}`,
+        },
+        body: JSON.stringify({ email: userData.email }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Show QR code to user
+        this.showMFAQRCode(data.qrCode, data.backupCodes);
+      } else {
+        this.showError("Failed to setup MFA");
+      }
+    } catch (error) {
+      this.logger.error("MFA setup failed", error);
+      this.showError("MFA setup failed");
+    }
+  }
+
+  showMFAQRCode(qrCode, backupCodes) {
+    // Implement UI to show QR code and backup codes
+    const mfaModal = document.createElement("div");
+    mfaModal.innerHTML = `
+        <div class="mfa-modal">
+            <h3>Setup Two-Factor Authentication</h3>
+            <p>Scan this QR code with your authenticator app:</p>
+            <img src="${qrCode}" alt="MFA QR Code">
+            <p>Backup codes (save these securely):</p>
+            <ul>
+                ${backupCodes.map((code) => `<li>${code}</li>`).join("")}
+            </ul>
+            <button onclick="dashboard.verifyMFASetup()">Verify Setup</button>
+        </div>
+    `;
+    document.body.appendChild(mfaModal);
+  }
+
   setupSocketEvents() {
     if (!this.socket) {
       this.logger.error(
@@ -343,7 +388,7 @@ class DashboardController {
         this.startTextChat(); // This will automatically join the queue
       }, 1000);
     });
-    
+
     this.socket.on("disconnect", (reason) => {
       this.logger.info("DashboardController: Socket disconnected", {
         reason: reason,

@@ -42,92 +42,170 @@
       <main class="auth-main">
         <div class="auth-container">
           <div class="auth-card">
-            <div class="auth-header">
-              <h1>Welcome Back</h1>
-              <p>Sign in to your CampusConnect account</p>
+            <!-- Regular Login Form -->
+            <div id="regularLoginForm">
+              <div class="auth-header">
+                <h1>Welcome Back</h1>
+                <p>Sign in to your CampusConnect account</p>
+              </div>
+
+              <form id="loginForm" class="auth-form">
+                <div class="form-group">
+                  <label for="email">College Email</label>
+                  <div class="input-container">
+                    <input type="email" id="email" name="email" required />
+                    <span class="input-icon">✉️</span>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="password">Password</label>
+                  <div class="input-container">
+                    <input
+                      type="password"
+                      id="password"
+                      name="password"
+                      required
+                    />
+                    <span class="input-icon">🔒</span>
+                    <button
+                      type="button"
+                      class="password-toggle"
+                      id="passwordToggle"
+                    >
+                      👁️
+                    </button>
+                  </div>
+                </div>
+
+                <div class="form-options">
+                  <label class="checkbox-container">
+                    <input type="checkbox" id="rememberMe" />
+                    <span class="checkmark"></span>
+                    Remember me
+                  </label>
+                  <a href="#" class="forgot-password">Forgot password?</a>
+                </div>
+
+                <button type="submit" class="auth-submit-btn">
+                  <span class="btn-text">Sign In</span>
+                  <span class="btn-loader"></span>
+                </button>
+
+                <div class="auth-footer">
+                  <p>
+                    Don't have an account?
+                    <a href="/signup.html">Sign up now</a>
+                  </p>
+                </div>
+              </form>
             </div>
 
-            <form id="loginForm" class="auth-form">
-              <div class="form-group">
-                <label for="email">College Email</label>
-                <div class="input-container">
-                  <input type="email" id="email" name="email" required />
-                  <span class="input-icon">✉️</span>
-                </div>
+            <!-- MFA Verification Form (Hidden by default) -->
+            <div id="mfaVerificationForm" style="display: none">
+              <div class="auth-header">
+                <h1>Two-Factor Authentication</h1>
+                <p>Enter the code from your authenticator app</p>
               </div>
 
-              <div class="form-group">
-                <label for="password">Password</label>
-                <div class="input-container">
-                  <input
-                    type="password"
-                    id="password"
-                    name="password"
-                    required
-                  />
-                  <span class="input-icon">🔒</span>
-                  <button
-                    type="button"
-                    class="password-toggle"
-                    id="passwordToggle"
-                  >
-                    👁️
+              <form id="mfaForm" class="auth-form">
+                <div class="form-group">
+                  <label for="mfaCode">Verification Code</label>
+                  <div class="input-container">
+                    <input
+                      type="text"
+                      id="mfaCode"
+                      name="mfaCode"
+                      placeholder="123456"
+                      maxlength="6"
+                      required
+                    />
+                    <span class="input-icon">🔐</span>
+                  </div>
+                  <div class="input-hint">
+                    Enter the 6-digit code from your authenticator app
+                  </div>
+                </div>
+
+                <div class="mfa-options">
+                  <button type="button" id="useBackupCode" class="text-btn">
+                    Use backup code instead
                   </button>
                 </div>
-              </div>
 
-              <div class="form-options">
-                <label class="checkbox-container">
-                  <input type="checkbox" id="rememberMe" />
-                  <span class="checkmark"></span>
-                  Remember me
-                </label>
-                <a href="#" class="forgot-password">Forgot password?</a>
-              </div>
-
-              <button type="submit" class="auth-submit-btn">
-                <span class="btn-text">Sign In</span>
-                <span class="btn-loader"></span>
-              </button>
-
-              <div class="auth-divider">
-                <span>or continue with</span>
-              </div>
-
-              <div class="social-auth">
-                <button type="button" class="social-btn google-btn">
-                  <span class="social-icon">🔍</span>
-                  Google
+                <button type="submit" class="auth-submit-btn">
+                  <span class="btn-text">Verify & Continue</span>
+                  <span class="btn-loader"></span>
                 </button>
-                <button type="button" class="social-btn microsoft-btn">
-                  <span class="social-icon">🔷</span>
-                  Microsoft
-                </button>
+
+                <div class="mfa-footer">
+                  <p>
+                    Lost access to your authenticator?
+                    <a href="#" id="recoveryOptions">Recovery options</a>
+                  </p>
+                </div>
+              </form>
+            </div>
+
+            <!-- Backup Code Form (Hidden by default) -->
+            <div id="backupCodeForm" style="display: none">
+              <div class="auth-header">
+                <h1>Use Backup Code</h1>
+                <p>Enter one of your backup codes</p>
               </div>
 
-              <div class="auth-footer">
-                <p>
-                  Don't have an account? <a href="/signup.html">Sign up now</a>
-                </p>
-              </div>
-            </form>
+              <form id="backupCodeAuthForm" class="auth-form">
+                <div class="form-group">
+                  <label for="backupCode">Backup Code</label>
+                  <div class="input-container">
+                    <input
+                      type="text"
+                      id="backupCode"
+                      name="backupCode"
+                      placeholder="ABCD-EFGH-IJKL"
+                      required
+                    />
+                    <span class="input-icon">🔑</span>
+                  </div>
+                  <div class="input-hint">
+                    Enter one of your 12-character backup codes
+                  </div>
+                </div>
+
+                <button type="submit" class="auth-submit-btn">
+                  <span class="btn-text">Verify with Backup Code</span>
+                  <span class="btn-loader"></span>
+                </button>
+
+                <div class="mfa-footer">
+                  <button type="button" id="backToMfa" class="text-btn">
+                    ← Back to authenticator code
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
 
           <div class="auth-visual">
             <div class="visual-content">
-              <div class="visual-icon">🎓</div>
-              <h2>Connect with Fellow Students</h2>
+              <div class="visual-icon">🔒</div>
+              <h2>Enhanced Security</h2>
               <p>
-                Join thousands of students collaborating and learning together
+                Your account is protected with end-to-end encryption and
+                optional two-factor authentication
               </p>
-              <div class="visual-stats">
-                <div class="stat">
-                  <span class="stat-number">500+</span>
-                  <span class="stat-label">Active Students</span>
+              <div class="security-features">
+                <div class="security-item">
+                  <span class="security-icon">🔐</span>
+                  <span>End-to-End Encryption</span>
                 </div>
-                <div class="stat">
-                  <span class="stat-number">50+</span>
-                  <span class="stat-label">Colleges</span>
+                <div class="security-item">
+                  <span class="security-icon">🛡️</span>
+                  <span>Two-Factor Authentication</span>
+                </div>
+                <div class="security-item">
+                  <span class="security-icon">🔍</span>
+                  <span>Real-time Monitoring</span>
                 </div>
               </div>
             </div>
@@ -137,5 +215,6 @@
     </div>
 
     <script src="/js/auth/authManager.js"></script>
+    <script src="/js/auth/mfaManager.js"></script>
   </body>
 </html>
